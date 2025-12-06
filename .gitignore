@@ -1,0 +1,63 @@
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Pybuilder
+.pybuilder/
+
+# mypy
+.mypy_cache/
+
+# IDE/editor settings
+.vscode/
+.idea/
+*.sublime-workspace
+
+# Environment variables
+.env
+.venv
+env.bak
+
+# Flask instance folder
+instance/
+
+# Database files
+*.sqlite3
+*.db
+
+# Mac / Windows
+.DS_Store
+Thumbs.db
+
+# Node modules (if front-end packages used)
+node_modules/
+
+# Logs
+*.log
+
+# Misc
+coverage/
+__MACOSX/

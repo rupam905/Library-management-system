@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Library Management System</title>
+  <link rel="stylesheet" href="/static/css/style.css?" />
+  <script defer src="/static/js/app.js"></script>
+</head>
+
+<body>
+  <header>
+    <h1>Library Management System</h1>
+    <div class="top-right">
+      <button class="link-btn" id="homeBtn" onclick="goHome()" disabled>Home</button>
+      <button class="link-btn" id="logoutBtn" onclick="logout()" disabled>Log Out</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Login -->
+    <section id="loginSection" class="card">
+      <h2>Login</h2>
+      <form id="loginForm">
+        <div class="form-row">
+          <label>User ID</label>
+          <input type="text" name="username" id="loginUser" required />
+        </div>
+        <div class="form-row">
+          <label>Password</label>
+          <input type="password" name="password" id="loginPass" required />
+        </div>
+        <div class="actions">
+          <button type="button" class="btn" onclick="resetLogin()">Cancel</button>
+          <button type="submit" class="btn primary">Login</button>
+        </div>
+        <div id="loginError" class="error"></div>
+        <p class="hint">Admin: adm/adm &nbsp;|&nbsp; User: user/user</p>
+      </form>
+    </section>
+
+    <!-- Home -->
+    <section id="homeSection" class="card hidden">
+      <h2 id="homeTitle">User Home Page</h2>
+      <p>Product Details</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Code No From</th>
+            <th>Code No To</th>
+            <th>Category</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>SC(B/M)000001</td>
+            <td>SC(B/M)000001</td>
+            <td>Science</td>
+          </tr>
+          <tr>
+            <td>EC(B/M)000001</td>
+            <td>EC(B/M)000001</td>
+            <td>Economics</td>
+          </tr>
+          <tr>
+            <td>FC(B/M)000001</td>
+            <td>FC(B/M)000001</td>
+            <td>Fiction</td>
+          </tr>
+          <tr>
+            <td>CH(B/M)000001</td>
+            <td>CH(B/M)000001</td>
+            <td>Children</td>
+          </tr>
+          <tr>
+            <td>PD(B/M)000001</td>
+            <td>PD(B/M)000001</td>
+            <td>Personal Development</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="home-links">
+        <button class="btn" onclick="openReports()">Reports</button>
+        <button class="btn" onclick="openTransactions()">Transactions</button>
+        <button class="btn admin-only" onclick="openMaintenance()">Maintenance</button>
+      </div>
+      <p class="note">Note: If logged in as Admin - home shows Admin Home Page. If logged in as user - home shows User
+        Home Page.</p>
+    </section>
+
+    <!-- Transactions -->
+    <section id="transactionSection" class="card hidden layout">
+      <div class="side-menu">
+        <button onclick="showTxnPage('availability')">Is book available?</button>
+        <button onclick="showTxnPage('issue')">Issue book?</button>
+        <button onclick="showTxnPage('return')">Return book?</button>
+        <button onclick="showTxnPage('fine')">Pay Fine?</button>
+      </div>
+      <div class="content-area">
+        <!-- Availability -->
+        <div id="txn-availability" class="txn-page hidden">
+          <h2>Book Availability</h2>
+          <form id="availForm">
+            <div class="form-row">
+              <label>Enter Book Name</label>
+              <input type="text" id="availTitle" />
+            </div>
+            <div class="form-row">
+              <label>Enter Author</label>
+              <input type="text" id="availAuthor" />
+            </div>
+            <div class="actions">
+              <button type="button" class="btn" onclick="goHome()">Back</button>
+              <button type="submit" class="btn primary">Search</button>
+            </div>
+            <div id="availError" class="error"></div>
+          </form>
+          <h3>Search Results</h3>
+          <table id="availResults">
+            <thead>
+              <tr>
+                <th>Select</th>
+                <th>Book Name</th>
+                <th>Author</th>
+                <th>Serial No</th>
+                <th>Available</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <!-- Issue -->
+        <div id="txn-issue" class="txn-page hidden">
+          <h2>Book Issue</h2>
+          <form id="issueForm">
+            <div class="form-row">
+              <label>Membership Id</label>
+              <input type="text" id="issueMember" required value="M001" />
+            </div>
+            <div class="form-row">
+              <label>Book Name</label>
+              <input type="text" id="issueBookName" required />
+            </div>
+            <div class="form-row">
+              <label>Author</label>
+              <input type="text" id="issueAuthor" required />
+            </div>
+            <div class="form-row">
+              <label>Serial No</label>
+              <input type="text" id="issueSerial" required />
+            </div>
+            <div class="form-row">
+              <label>Issue Date</label>
+              <input type="date" id="issueDate" required />
+            </div>
+            <div class="form-row">
+              <label>Return Date</label>
+              <input type="date" id="issueReturnDate" required />
+            </div>
+            <div class="form-row">
+              <label>Remarks (optional)</label>
+              <textarea id="issueRemarks"></textarea>
+            </div>
+            <div class="actions">
+              <button type="button" class="btn" onclick="showStatus('cancel')">Cancel</button>
+              <button type="submit" class="btn primary">Confirm</button>
+            </div>
+            <div id="issueError" class="error"></div>
+          </form>
+        </div>
+
+        <!-- Return -->
+        <div id="txn-return" class="txn-page hidden">
+          <h2>Return Book</h2>
+          <form id="returnForm">
+            <div class="form-row">
+              <label>Membership Id</label>
+              <input type="text" id="returnMember" required value="M001" />
+            </div>
+            <div class="form-row">
+              <label>Serial No</label>
+              <input type="text" id="returnSerial" required />
+            </div>
+            <div class="form-row">
+              <label>Planned Return Date</label>
+              <input type="date" id="returnPlanned" required />
+            </div>
+            <div class="actions">
+              <button type="button" class="btn" onclick="showStatus('cancel')">Cancel</button>
+              <button type="submit" class="btn primary">Confirm</button>
+            </div>
+            <div id="returnError" class="error"></div>
+          </form>
+        </div>
+
+        <!-- Fine -->
+        <div id="txn-fine" class="txn-page hidden">
+          <h2>Pay Fine</h2>
+          <form id="fineForm">
+            <div class="form-row">
+              <label>Issue Id</label>
+              <input type="number" id="fineIssueId" required />
+            </div>
+            <div class="form-row">
+              <label>Actual Return Date</label>
+              <input type="date" id="fineActualReturn" required />
+            </div>
+            <div class="form-row">
+              <label>Fine Paid</label>
+              <input type="checkbox" id="finePaid" />
+            </div>
+            <div class="actions">
+              <button type="button" class="btn" onclick="showStatus('cancel')">Cancel</button>
+              <button type="submit" class="btn primary">Confirm</button>
+            </div>
+            <div id="fineError" class="error"></div>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- Simple status -->
+    <section id="statusSection" class="card hidden">
+      <h2 id="statusText"></h2>
+    </section>
+
+    <!-- Reports placeholder -->
+    <section id="reportsSection" class="card hidden layout">
+      <!-- LEFT SIDE MENU (like Excel) -->
+      <div class="side-menu">
+        <button onclick="showReport('books')">Master List of Books</button>
+        <button onclick="showReport('movies')">Master List of Movies</button>
+        <button onclick="showReport('members')">Master List of Memberships</button>
+        <button onclick="showReport('active-issues')">Active Issues</button>
+        <button onclick="showReport('overdue')">Overdue returns</button>
+        <button onclick="showReport('requests')">Issue Requests</button>
+      </div>
+
+      <!-- RIGHT CONTENT AREA -->
+      <div class="content-area">
+        <h2 id="reportTitle">Reports</h2>
+
+        <table id="reportTable">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+
+        <div id="reportError" class="error"></div>
+
+        <p class="note">
+          Note: If logged in as Admin – Home will take you to Admin Home Page.
+          If logged in as User – Home will take you to User Home Page.
+        </p>
+      </div>
+    </section>
+
+
+    <!-- Maintenance placeholder -->
+    <section id="maintenanceSection" class="card hidden layout">
+
+      <!-- LEFT SIDE MENU -->
+      <div class="side-menu">
+        <button data-page="addMember" onclick="showMaintPage('addMember')">Add Membership</button>
+        <button data-page="updateMember" onclick="showMaintPage('updateMember')">Update Membership</button>
+        <button data-page="addBook" onclick="showMaintPage('addBook')">Add Book/Movie</button>
+        <button data-page="updateBook" onclick="showMaintPage('updateBook')">Update Book/Movie</button>
+        <button data-page="userMgmt" onclick="showMaintPage('userMgmt')">User Management</button>
+      </div>
+
+      <!-- RIGHT SIDE CONTENT AREA -->
+      <div class="content-area">
+
+        <!-- ADD MEMBERSHIP -->
+        <div id="maint-addMember" class="maint-page hidden">
+          <h2>Add Membership</h2>
+          <form id="addMemberForm">
+            <div class="form-row"><label>First Name</label><input type="text" id="amFirst" required></div>
+            <div class="form-row"><label>Last Name</label><input type="text" id="amLast" required></div>
+            <div class="form-row"><label>Contact Number</label><input type="text" id="amContact" required></div>
+            <div class="form-row"><label>Contact Address</label><input type="text" id="amAddress" required></div>
+            <div class="form-row"><label>Aadhar Card No</label><input type="text" id="amAadhar" required></div>
+            <div class="form-row"><label>Start Date</label><input type="date" id="amStart" required></div>
+            <div class="form-row"><label>End Date</label><input type="date" id="amEnd" required></div>
+
+            <label>Membership Duration</label>
+            <div class="form-row">
+              <input type="radio" name="amDuration" value="6" checked> 6 months
+              <input type="radio" name="amDuration" value="12"> 1 year
+              <input type="radio" name="amDuration" value="24"> 2 years
+            </div>
+
+            <div class="actions">
+              <button class="btn" type="button" onclick="showStatus('cancel')">Cancel</button>
+              <button class="btn primary" type="submit">Confirm</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- UPDATE MEMBERSHIP -->
+        <div id="maint-updateMember" class="maint-page hidden">
+          <h2>Update Membership</h2>
+          <form id="updateMemberForm">
+            <div class="form-row">
+              <label>Membership Number</label>
+              <input type="text" id="umId" required>
+            </div>
+
+            <div class="form-row"><label>Start Date</label><input type="date" id="umStart" required></div>
+            <div class="form-row"><label>End Date</label><input type="date" id="umEnd" required></div>
+
+            <label>Membership Extension</label>
+            <div class="form-row">
+              <input type="radio" name="umExt" value="6" checked> 6 months
+              <input type="radio" name="umExt" value="12"> 1 year
+              <input type="radio" name="umExt" value="24"> 2 years
+            </div>
+
+            <label>Membership Removal</label>
+            <div class="form-row">
+              <input type="radio" name="umRemove" value="yes"> Yes
+              <input type="radio" name="umRemove" value="no" checked> No
+            </div>
+
+            <div class="actions">
+              <button class="btn" type="button" onclick="showStatus('cancel')">Cancel</button>
+              <button class="btn primary" type="submit">Confirm</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- ADD BOOK / MOVIE -->
+        <div id="maint-addBook" class="maint-page hidden">
+          <h2>Add Book/Movie</h2>
+          <form id="addBookForm">
+
+            <label>Type</label>
+            <div class="form-row">
+              <input type="radio" name="abType" value="book" checked> Book
+              <input type="radio" name="abType" value="movie"> Movie
+            </div>
+
+            <div class="form-row"><label>Name of Book/Movie</label><input type="text" id="abName" required></div>
+            <div class="form-row"><label>Author Name</label><input type="text" id="abAuthor" required></div>
+            <div class="form-row"><label>Date of Procurement</label><input type="date" id="abDate" required></div>
+            <div class="form-row"><label>Quantity/Copies</label><input type="number" id="abQty" required min="1"
+                value="1">
+            </div>
+
+            <div class="actions">
+              <button class="btn" type="button" onclick="showStatus('cancel')">Cancel</button>
+              <button class="btn primary" type="submit">Confirm</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- UPDATE BOOK / MOVIE -->
+        <div id="maint-updateBook" class="maint-page hidden">
+          <h2>Update Book/Movie</h2>
+          <form id="updateBookForm">
+
+            <label>Select Type</label>
+            <div class="form-row">
+              <input type="radio" name="ubType" value="book" checked> Book
+              <input type="radio" name="ubType" value="movie"> Movie
+            </div>
+
+            <div class="form-row"><label>Book/Movie Name</label><input type="text" id="ubName" required></div>
+            <div class="form-row"><label>Serial No</label><input type="text" id="ubSerial" required></div>
+
+            <div class="form-row"><label>Status</label>
+              <select id="ubStatus" required>
+                <option value="Available">Available</option>
+                <option value="Issued">Issued</option>
+              </select>
+            </div>
+
+            <div class="form-row"><label>Date</label><input type="date" id="ubDate" required></div>
+
+            <div class="actions">
+              <button class="btn" type="button" onclick="showStatus('cancel')">Cancel</button>
+              <button class="btn primary" type="submit">Confirm</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- USER MANAGEMENT -->
+        <div id="maint-userMgmt" class="maint-page hidden">
+          <h2>User Management</h2>
+          <form id="userMgmtForm">
+
+            <label>User Type</label>
+            <div class="form-row">
+              <input type="radio" name="umType" value="new" checked> New User
+              <input type="radio" name="umType" value="existing"> Existing User
+            </div>
+
+            <div class="form-row"><label>Name</label><input type="text" id="umName" required></div>
+
+            <div class="form-row">
+              <label>Status</label>
+              <input type="checkbox" id="umActive"> Active
+            </div>
+
+            <div class="form-row">
+              <label>Admin</label>
+              <input type="checkbox" id="umAdmin"> Admin
+            </div>
+
+            <p class="note">Unselecting the checkboxes means: inactive and not an admin.</p>
+
+            <div class="actions">
+              <button class="btn" type="button" onclick="showStatus('cancel')">Cancel</button>
+              <button class="btn primary" type="submit">Confirm</button>
+            </div>
+
+          </form>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+</body>
+
+</html>
