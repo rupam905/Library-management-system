@@ -1,5 +1,8 @@
 let currentRole = null;
 
+// Holds the current issue data across Return Book -> Pay Fine
+let currentIssue = null;
+
 function showSection(id) {
   const ids = [
     "loginSection",
@@ -86,8 +89,6 @@ function showMaintPage(name) {
     activeBtn.classList.add("active");
   }
 }
-
-
 
 // Configuration for each report: endpoint, title and columns
 const reportConfig = {
@@ -264,11 +265,21 @@ function logout() {
     "You have successfully logged out.";
 }
 
+function goBackFromMaintenance() {
+  showSection("maintenanceSection");
+  showMaintPage("addMember");
+}
+
+function goBackFromTransactions() {
+  showSection("transactionSection");
+  // default back to the main transaction list / "Is book available?"
+  showTxnPage("availability"); // adjust page name if your default is different
+}
+
 function openTransactions() {
   showSection("transactionSection");
   showTxnPage("availability");
 }
-
 
 function openReports() {
   showSection("reportsSection");
@@ -374,82 +385,157 @@ document.getElementById("issueForm").addEventListener("submit", async (e) => {
   }
 });
 
-/* Return */
-document.getElementById("returnForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const member = document.getElementById("returnMember").value.trim();
-  const serial = document.getElementById("returnSerial").value.trim();
-  const planned = document.getElementById("returnPlanned").value;
-  const errDiv = document.getElementById("returnError");
-
-  if (!member || !serial || !planned) {
-    errDiv.textContent = "All fields are mandatory.";
+// RETURN BOOK FLOW
+document.addEventListener("DOMContentLoaded", () => {
+  const form = document.getElementById("returnForm");
+  if (!form) {
+    console.error("returnForm not found in DOM");
     return;
   }
 
-  const formData = new FormData();
-  formData.append("serial_no", serial);
-  formData.append("membership_id", member);
-  formData.append("planned_return", planned);
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    console.log("Return Book: submit handler triggered");
 
-  try {
-    const resp = await fetch("/api/transactions/return", {
-      method: "POST",
-      body: formData,
-    });
-    const data = await resp.json();
-    if (resp.status >= 400) {
-      errDiv.textContent = data.detail || "Return failed.";
+    const errDiv = document.getElementById("rbError");
+    errDiv.textContent = "";
+
+    const memberId = document.getElementById("rbMemberId").value.trim();
+    const serial = document.getElementById("rbSerial").value.trim();
+    const newReturnDate = document.getElementById("rbReturnDate").value;
+    const remarks = document.getElementById("rbRemarks").value.trim();
+
+    if (!memberId || !serial) {
+      errDiv.textContent = "Membership Id and Serial No are mandatory.";
       return;
     }
-    errDiv.textContent = "";
-    // For fine step, we need issue id
-    document.getElementById("fineIssueId").value = data.issue_id;
-    showTxnPage("fine");
-  } catch (err) {
-    errDiv.textContent = "Server error.";
-  }
+
+    const formData = new FormData();
+    formData.append("membership_id", memberId);
+    formData.append("serial_no", serial);
+    if (newReturnDate) formData.append("return_date", newReturnDate);
+    if (remarks) formData.append("remarks", remarks);
+
+    try {
+      // TODO: adjust endpoint if your route name is different
+      const resp = await fetch("/api/transactions/return/start", {
+        method: "POST",
+        body: formData,
+      });
+
+      console.log("Return Book: response status", resp.status);
+
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        errDiv.textContent = data.detail || "Return start failed.";
+        return;
+      }
+
+      // store globally for Pay Fine
+      currentIssue = data;
+
+      // Fill Pay Fine screen fields
+      document.getElementById("pfBookName").value = data.book_name || "";
+      document.getElementById("pfAuthor").value = data.author || "";
+      document.getElementById("pfSerial").value = data.serial_no || serial;
+      document.getElementById("pfIssueDate").value = data.issue_date || "";
+      document.getElementById("pfPlannedReturn").value =
+        data.return_date || newReturnDate || "";
+      document.getElementById("pfActualReturn").value = "";
+      document.getElementById("pfFine").value = (
+        data.fine_amount ?? 0
+      ).toString();
+      document.getElementById("pfFinePaid").checked = false;
+      document.getElementById("pfRemarks").value = remarks;
+      document.getElementById("pfError").textContent = "";
+
+      // Fill Return Book read-only info too
+      document.getElementById("rbBookName").value = data.book_name || "";
+      document.getElementById("rbAuthor").value = data.author || "";
+      document.getElementById("rbIssueDate").value = data.issue_date || "";
+      if (!newReturnDate && data.return_date) {
+        document.getElementById("rbReturnDate").value = data.return_date;
+      }
+
+      // Move to Pay Fine screen
+      showTxnPage("fine");
+    } catch (err) {
+      console.error(err);
+      errDiv.textContent = "Server error.";
+    }
+  });
 });
 
-/* Fine */
-document.getElementById("fineForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const issueId = document.getElementById("fineIssueId").value;
-  const actual = document.getElementById("fineActualReturn").value;
-  const paid = document.getElementById("finePaid").checked;
-  const errDiv = document.getElementById("fineError");
+// PAY FINE FLOW
+(function attachFineHandler() {
+  const form = document.getElementById("fineForm");
+  if (!form) return;
 
-  if (!issueId || !actual) {
-    errDiv.textContent = "Issue id and date are mandatory.";
-    return;
-  }
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errDiv = document.getElementById("pfError");
+    errDiv.textContent = "";
 
-  const formData = new FormData();
-  formData.append("issue_id", issueId);
-  formData.append("actual_return_date", actual);
-  formData.append("fine_paid", paid ? "true" : "false");
-
-  try {
-    const resp = await fetch("/api/transactions/fine", {
-      method: "POST",
-      body: formData,
-    });
-    const data = await resp.json();
-    if (resp.status >= 400) {
-      errDiv.textContent = data.detail || "Fine step failed.";
+    if (!currentIssue || !currentIssue.issue_id) {
+      errDiv.textContent = "No issue selected for fine payment.";
       return;
     }
-    errDiv.textContent = "";
-    showStatus("success");
-  } catch (err) {
-    errDiv.textContent = "Server error.";
-  }
-});
+
+    const actualReturn = document.getElementById("pfActualReturn").value;
+    const fineAmount = parseFloat(
+      document.getElementById("pfFine").value || "0"
+    );
+    const finePaid = document.getElementById("pfFinePaid").checked;
+    const remarks = document.getElementById("pfRemarks").value.trim();
+
+    if (!actualReturn) {
+      errDiv.textContent = "Actual return date is mandatory.";
+      return;
+    }
+
+    // If fine > 0, checkbox MUST be selected
+    if (fineAmount > 0 && !finePaid) {
+      errDiv.textContent =
+        "Fine is pending. Please select 'Fine Paid' to complete the return.";
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("issue_id", currentIssue.issue_id);
+    formData.append("actual_return_date", actualReturn);
+    formData.append("fine_paid", finePaid ? "true" : "false");
+    formData.append("remarks", remarks);
+
+    try {
+      // Adjust URL to your actual pay-fine endpoint
+      const resp = await fetch("/api/transactions/fine", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        errDiv.textContent = data.detail || "Fine payment failed.";
+        return;
+      }
+
+      errDiv.textContent = "Transaction completed successfully.";
+      // Book returned, clear current issue
+      currentIssue = null;
+    } catch (err) {
+      console.error(err);
+      errDiv.textContent = "Server error.";
+    }
+  });
+})();
 
 function showStatus(type) {
   const text =
     type === "cancel"
       ? "Transaction cancelled."
+      : type === "logout"
+      ? "You have successfully logged out."
       : "Transaction completed successfully.";
   document.getElementById("statusText").textContent = text;
   showSection("statusSection");
@@ -557,40 +643,61 @@ document
   });
 
 /* Maintenance: Add book */
-document.getElementById("addBookForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const errDiv = document.getElementById("abError");
+// Maintenance: Add Book/Movie
+document.addEventListener("DOMContentLoaded", () => {
+  const addBookForm = document.getElementById("addBookForm");
+  if (!addBookForm) return;
 
-  const formData = new FormData();
-  formData.append(
-    "serial_no",
-    document.getElementById("abSerial").value.trim()
-  );
-  formData.append("name", document.getElementById("abName").value.trim());
-  formData.append("author", document.getElementById("abAuthor").value.trim());
-  formData.append(
-    "category",
-    document.getElementById("abCategory").value.trim()
-  );
-  formData.append("procurement_date", document.getElementById("abDate").value);
-  formData.append("cost", document.getElementById("abCost").value);
-  formData.append("type", document.getElementById("abType").value);
+  addBookForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
 
-  try {
-    const resp = await fetch("/api/maintenance/book/add", {
-      method: "POST",
-      body: formData,
-    });
-    const data = await resp.json();
-    if (!resp.ok) {
-      errDiv.textContent = data.detail || "Error adding book/movie";
+    const errDiv = document.getElementById("abError");
+    if (errDiv) errDiv.textContent = "";
+
+    const typeRadio = document.querySelector("input[name='abType']:checked");
+    const type = typeRadio ? typeRadio.value : "Book"; // "Book" or "Movie"
+    const name = document.getElementById("abName").value.trim();
+    const procurementDate = document.getElementById("abDate").value;
+    const qty = parseInt(document.getElementById("abQty").value, 10) || 1;
+
+    if (!name || !procurementDate || qty <= 0) {
+      if (errDiv) errDiv.textContent = "All fields are mandatory and quantity must be ≥ 1.";
       return;
     }
-    errDiv.textContent = "Book/Movie added successfully.";
-  } catch {
-    errDiv.textContent = "Server error.";
-  }
+
+    const formData = new FormData();
+    formData.append("type", type);
+    formData.append("name", name);
+    formData.append("procurement_date", procurementDate);
+    formData.append("quantity", String(qty));
+
+    try {
+      const resp = await fetch("/api/maintenance/book/add", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await resp.json();
+      console.log("AddBook response", resp.status, data);
+
+      if (!resp.ok) {
+        if (errDiv) errDiv.textContent = data.detail || "Error adding book/movie.";
+        return;
+      }
+
+      if (errDiv) errDiv.textContent = "Book/Movie added successfully.";
+
+      // reset form
+      document.getElementById("abName").value = "";
+      document.getElementById("abDate").value = "";
+      document.getElementById("abQty").value = "1";
+
+    } catch (err) {
+      console.error("AddBook error", err);
+      if (errDiv) errDiv.textContent = "Server error.";
+    }
+  });
 });
+
 
 // Auto-load book details based on serial no
 document.getElementById("ubSerial").addEventListener("blur", async () => {

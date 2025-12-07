@@ -5,6 +5,8 @@ from ..db import get_connection
 
 router = APIRouter()
 
+DAILY_FINE = 10
+
 @router.get("/availability")
 async def availability(book: str = Query("", alias="book"), author: str = Query("", alias="author")):
     if not book and not author:
@@ -116,6 +118,91 @@ async def start_return(
     conn.close()
     return {"message": "Return initiated", "issue_id": issue["issue_id"]}
 
+@router.post("/return/start")
+async def start_return(
+    membership_id: str = Form(...),
+    serial_no: str = Form(...),
+    return_date: str | None = Form(None),
+    remarks: str | None = Form(None),
+):
+    """
+    Step 1 of return flow:
+    - Find active issue for this membership + serial_no
+    - Optionally update planned return date
+    - Return book + issue details to drive Pay Fine screen
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # NOTE: issue_id and planned_return are the real column names in your DB
+    cur.execute(
+        """
+        SELECT 
+          i.issue_id        AS issue_id,
+          i.membership_id   AS membership_id,
+          i.serial_no       AS serial_no,
+          i.issue_date      AS issue_date,
+          i.planned_return  AS planned_return,
+          b.name            AS book_name,
+          b.author          AS author
+        FROM issues i
+        JOIN books b ON b.serial_no = i.serial_no
+        WHERE i.membership_id = ?
+          AND i.serial_no = ?
+          AND i.actual_return_date IS NULL
+        """,
+        (membership_id, serial_no),
+    )
+    row = cur.fetchone()
+
+    if not row:
+        conn.close()
+        raise HTTPException(
+            status_code=404,
+            detail="No active issue found for this membership and serial number"
+        )
+
+    # Use existing planned_return if user didn't change Return Date
+    effective_return = return_date or row["planned_return"]
+
+    planned_dt = date.fromisoformat(row["planned_return"])
+    today = date.today()
+    late_days = (today - planned_dt).days
+    if late_days > 0:
+        fine_amount = late_days * DAILY_FINE
+    else:
+        fine_amount = 0
+
+    # If user changed return_date on the Return Book screen,
+    # update planned_return in DB so /fine uses this new value.
+    try:
+        if return_date:
+            cur.execute(
+                "UPDATE issues SET planned_return = ? WHERE issue_id = ?",
+                (effective_return, row["issue_id"]),
+            )
+        elif remarks:
+            cur.execute(
+                "UPDATE issues SET remarks = COALESCE(remarks, ?) WHERE issue_id = ?",
+                (remarks, row["issue_id"]),
+            )
+
+        conn.commit()
+    finally:
+        conn.close()
+
+    # This dict shape matches what your JS expects
+    return {
+        "issue_id": row["issue_id"],
+        "membership_id": row["membership_id"],
+        "serial_no": row["serial_no"],
+        "book_name": row["book_name"],
+        "author": row["author"],
+        "issue_date": row["issue_date"],
+        "return_date": effective_return,
+        "fine_amount": fine_amount,
+    }
+
 
 @router.post("/fine")
 async def complete_return(
@@ -123,6 +210,7 @@ async def complete_return(
     actual_return_date: str = Form(...),
     fine_paid: bool = Form(False),
 ):
+    # Parse date
     try:
         actual_dt = date.fromisoformat(actual_return_date)
     except ValueError:
@@ -130,6 +218,8 @@ async def complete_return(
 
     conn = get_connection()
     cur = conn.cursor()
+
+    # Load issue
     cur.execute("SELECT * FROM issues WHERE issue_id=?", (issue_id,))
     issue = cur.fetchone()
     if not issue:
@@ -138,33 +228,43 @@ async def complete_return(
 
     planned_dt = date.fromisoformat(issue["planned_return"])
     days_late = (actual_dt - planned_dt).days
+
+    # Calculate fine (Rs 10 per late day)
     fine = 0
     if days_late > 0:
-        fine = days_late * 10  # Rs.10 per day, for example
+        fine = days_late * 10
 
+    # Enforce "Fine Paid" rule
     if fine > 0 and not fine_paid:
         conn.close()
-        raise HTTPException(status_code=400, detail="Fine pending, please mark Fine Paid")
+        raise HTTPException(
+            status_code=400,
+            detail="Fine pending, please mark Fine Paid"
+        )
 
     try:
+        # Update issue record
         cur.execute(
-            "UPDATE issues SET actual_return_date=?, fine_amount=?, fine_paid=? WHERE issue_id=?",
-            (actual_return_date, fine, 1 if fine > 0 and fine_paid else 0, issue_id),
+            """
+            UPDATE issues
+            SET actual_return_date = ?, 
+                fine_amount = ?, 
+                fine_paid = ?
+            WHERE issue_id = ?
+            """,
+            (
+                actual_return_date,
+                fine,
+                1 if fine_paid and fine > 0 else 0,
+                issue_id,
+            ),
         )
-        # also mark book as available again
+
+        # Mark book as available again
         cur.execute(
-            "UPDATE books SET status='Available' WHERE serial_no=?",
+            "UPDATE books SET status = 'Available' WHERE serial_no = ?",
             (issue["serial_no"],),
         )
-        # update member pending fine (simple example: add, or clear if paid)
-        if fine > 0 and not fine_paid:
-            cur.execute(
-                "UPDATE members SET pending_fine = pending_fine + ? WHERE membership_id=?",
-                (fine, issue["membership_id"]),
-            )
-        elif fine > 0 and fine_paid:
-            # fine handled at issue level, keep member pending_fine
-            pass
 
         conn.commit()
     except Exception as e:
@@ -174,3 +274,4 @@ async def complete_return(
         conn.close()
 
     return {"message": "Return completed", "fine": fine}
+

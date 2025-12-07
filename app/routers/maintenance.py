@@ -142,30 +142,63 @@ async def update_membership(
 
 @router.post("/book/add")
 async def add_book(
-    serial_no: str = Form(...),
+    type: str = Form(...),               # "Book" or "Movie"
     name: str = Form(...),
-    author: str = Form(...),
-    category: str = Form(...),
-    procurement_date: str = Form(...),
-    cost: float = Form(...),
-    type: str = Form(...),  # 'Book' or 'Movie'
+    procurement_date: str = Form(...),   # "YYYY-MM-DD"
+    quantity: int = Form(...),
 ):
     if type not in ("Book", "Movie"):
         raise HTTPException(status_code=400, detail="Type must be Book or Movie")
 
+    if quantity <= 0:
+        raise HTTPException(status_code=400, detail="Quantity must be at least 1")
+
     conn = get_connection()
     cur = conn.cursor()
+
+    # Decide prefix for serial numbers
+    prefix = "B" if type == "Book" else "M"
+
+    # Find the last serial for this type, if any
+    cur.execute(
+        "SELECT serial_no FROM books WHERE type=? ORDER BY serial_no DESC LIMIT 1",
+        (type,),
+    )
+    row = cur.fetchone()
+    last_num = 0
+    if row:
+        # assume serial like 'B000001' or 'M000010'
+        existing = row["serial_no"]
+        # take trailing digits
+        digits = "".join(ch for ch in existing if ch.isdigit())
+        if digits:
+            last_num = int(digits)
+
     try:
-        cur.execute(
-            """
-            INSERT INTO books(
-                serial_no, name, author, category, status,
-                cost, procurement_date, type
+        for i in range(1, quantity + 1):
+            new_num = last_num + i
+            serial_no = f"{prefix}{new_num:06d}"  # e.g. B000001, M000002
+
+            cur.execute(
+                """
+                INSERT INTO books(
+                    serial_no, name, author, category,
+                    status, cost, procurement_date, type
+                )
+                VALUES (?,?,?,?,?,?,?,?)
+                """,
+                (
+                    serial_no,
+                    name,
+                    "",                 # author (not in this screen)
+                    "",                 # category (not in this screen)
+                    "Available",        # status default
+                    0.0,                # cost default
+                    procurement_date,
+                    type,
+                ),
             )
-            VALUES (?,?,?,?,?,?,?,?)
-            """,
-            (serial_no, name, author, category, "Available", cost, procurement_date, type),
-        )
+
         conn.commit()
     except Exception as e:
         conn.rollback()

@@ -171,53 +171,117 @@
         </div>
 
         <!-- Return -->
+        <!-- RETURN BOOK -->
         <div id="txn-return" class="txn-page hidden">
           <h2>Return Book</h2>
           <form id="returnForm">
             <div class="form-row">
-              <label>Membership Id</label>
-              <input type="text" id="returnMember" required value="M001" />
+              <label>Membership Id <span class="required">*</span></label>
+              <input type="text" id="rbMemberId" required>
             </div>
+
             <div class="form-row">
-              <label>Serial No</label>
-              <input type="text" id="returnSerial" required />
+              <label>Serial No <span class="required">*</span></label>
+              <input type="text" id="rbSerial" required>
             </div>
+
+            <!-- These are populated automatically from backend and not editable -->
             <div class="form-row">
-              <label>Planned Return Date</label>
-              <input type="date" id="returnPlanned" required />
+              <label>Name of Book</label>
+              <input type="text" id="rbBookName" readonly>
             </div>
+
+            <div class="form-row">
+              <label>Author Name</label>
+              <input type="text" id="rbAuthor" readonly>
+            </div>
+
+            <div class="form-row">
+              <label>Issue Date</label>
+              <input type="text" id="rbIssueDate" readonly>
+            </div>
+
+            <div class="form-row">
+              <label>Return Date</label>
+              <!-- populated from issue record; user allowed to change earlier or later -->
+              <input type="date" id="rbReturnDate">
+            </div>
+
+            <div class="form-row">
+              <label>Remarks</label>
+              <textarea id="rbRemarks"></textarea>
+            </div>
+
             <div class="actions">
-              <button type="button" class="btn" onclick="showStatus('cancel')">Cancel</button>
+              <button type="button" class="btn" onclick="goBackFromTransactions()">Back</button>
               <button type="submit" class="btn primary">Confirm</button>
             </div>
-            <div id="returnError" class="error"></div>
+
+            <div id="rbError" class="error"></div>
           </form>
         </div>
 
-        <!-- Fine -->
+
+        <!-- PAY FINE -->
         <div id="txn-fine" class="txn-page hidden">
           <h2>Pay Fine</h2>
           <form id="fineForm">
             <div class="form-row">
-              <label>Issue Id</label>
-              <input type="number" id="fineIssueId" required />
+              <label>Enter Book Name</label>
+              <input type="text" id="pfBookName" readonly>
             </div>
+
+            <div class="form-row">
+              <label>Enter Author</label>
+              <input type="text" id="pfAuthor" readonly>
+            </div>
+
+            <div class="form-row">
+              <label>Serial No</label>
+              <input type="text" id="pfSerial" readonly>
+            </div>
+
+            <div class="form-row">
+              <label>Issue Date</label>
+              <input type="text" id="pfIssueDate" readonly>
+            </div>
+
+            <div class="form-row">
+              <label>Return Date</label>
+              <input type="text" id="pfPlannedReturn" readonly>
+            </div>
+
             <div class="form-row">
               <label>Actual Return Date</label>
-              <input type="date" id="fineActualReturn" required />
+              <input type="date" id="pfActualReturn">
             </div>
+
             <div class="form-row">
-              <label>Fine Paid</label>
-              <input type="checkbox" id="finePaid" />
+              <label>Fine Calculated</label>
+              <input type="text" id="pfFine" readonly>
             </div>
+
+            <div class="form-row">
+              <label>
+                <input type="checkbox" id="pfFinePaid">
+                Fine Paid
+              </label>
+            </div>
+
+            <div class="form-row">
+              <label>Remarks</label>
+              <textarea id="pfRemarks"></textarea>
+            </div>
+
             <div class="actions">
-              <button type="button" class="btn" onclick="showStatus('cancel')">Cancel</button>
+              <button type="button" class="btn" onclick="goBackFromTransactions()">Back</button>
               <button type="submit" class="btn primary">Confirm</button>
             </div>
-            <div id="fineError" class="error"></div>
+
+            <div id="pfError" class="error"></div>
           </form>
         </div>
-      </div>
+
     </section>
 
     <!-- Simple status -->
@@ -273,61 +337,93 @@
 
         <!-- ADD MEMBERSHIP -->
         <div id="maint-addMember" class="maint-page hidden">
+          <!-- ADD MEMBERSHIP -->
+
           <h2>Add Membership</h2>
           <form id="addMemberForm">
-            <div class="form-row"><label>First Name</label><input type="text" id="amFirst" required></div>
-            <div class="form-row"><label>Last Name</label><input type="text" id="amLast" required></div>
-            <div class="form-row"><label>Contact Number</label><input type="text" id="amContact" required></div>
-            <div class="form-row"><label>Contact Address</label><input type="text" id="amAddress" required></div>
-            <div class="form-row"><label>Aadhar Card No</label><input type="text" id="amAadhar" required></div>
-            <div class="form-row"><label>Start Date</label><input type="date" id="amStart" required></div>
-            <div class="form-row"><label>End Date</label><input type="date" id="amEnd" required></div>
-
-            <label>Membership Duration</label>
             <div class="form-row">
-              <input type="radio" name="amDuration" value="6" checked> 6 months
-              <input type="radio" name="amDuration" value="12"> 1 year
-              <input type="radio" name="amDuration" value="24"> 2 years
+              <label>Membership Id</label>
+              <input type="text" id="amId" required>
+            </div>
+
+            <div class="form-row">
+              <label>First Name</label>
+              <input type="text" id="amFirst" required>
+            </div>
+
+            <div class="form-row">
+              <label>Last Name</label>
+              <input type="text" id="amLast" required>
+            </div>
+
+            <div class="form-row">
+              <label>Phone</label>
+              <input type="text" id="amPhone" required>
+            </div>
+
+            <div class="form-row">
+              <label>Address</label>
+              <input type="text" id="amAddress" required>
+            </div>
+
+            <div class="form-row">
+              <label>Aadhar</label>
+              <input type="text" id="amAadhar" required>
+            </div>
+
+            <div class="form-row">
+              <label>Start Date</label>
+              <input type="date" id="amStart" required>
+            </div>
+
+            <div class="form-row">
+              <label>Plan</label>
+              <select id="amPlan">
+                <option value="6m">6 months</option>
+                <option value="1y">1 year</option>
+                <option value="2y">2 years</option>
+              </select>
             </div>
 
             <div class="actions">
-              <button class="btn" type="button" onclick="showStatus('cancel')">Cancel</button>
-              <button class="btn primary" type="submit">Confirm</button>
+              <button type="button" class="btn" onclick="goBackFromMaintenance()">Back</button>
+              <button type="submit" class="btn primary">Confirm</button>
             </div>
+
+            <div id="amError" class="error"></div>
           </form>
         </div>
 
+
+        <!-- UPDATE MEMBERSHIP -->
         <!-- UPDATE MEMBERSHIP -->
         <div id="maint-updateMember" class="maint-page hidden">
           <h2>Update Membership</h2>
           <form id="updateMemberForm">
             <div class="form-row">
-              <label>Membership Number</label>
+              <label>Membership Id</label>
               <input type="text" id="umId" required>
             </div>
 
-            <div class="form-row"><label>Start Date</label><input type="date" id="umStart" required></div>
-            <div class="form-row"><label>End Date</label><input type="date" id="umEnd" required></div>
+            <p class="hint" id="umInfo"></p>
 
-            <label>Membership Extension</label>
+            <label>Action</label>
             <div class="form-row">
-              <input type="radio" name="umExt" value="6" checked> 6 months
-              <input type="radio" name="umExt" value="12"> 1 year
-              <input type="radio" name="umExt" value="24"> 2 years
-            </div>
-
-            <label>Membership Removal</label>
-            <div class="form-row">
-              <input type="radio" name="umRemove" value="yes"> Yes
-              <input type="radio" name="umRemove" value="no" checked> No
+              <input type="radio" name="umAction" value="extend6" checked> Extend 6 months
+              <input type="radio" name="umAction" value="extend1y"> Extend 1 year
+              <input type="radio" name="umAction" value="extend2y"> Extend 2 years
+              <input type="radio" name="umAction" value="remove"> Remove / Cancel
             </div>
 
             <div class="actions">
-              <button class="btn" type="button" onclick="showStatus('cancel')">Cancel</button>
-              <button class="btn primary" type="submit">Confirm</button>
+              <button type="button" class="btn" onclick="goBackFromMaintenance()">Back</button>
+              <button type="submit" class="btn primary">Confirm</button>
             </div>
+
+            <div id="umError" class="error"></div>
           </form>
         </div>
+
 
         <!-- ADD BOOK / MOVIE -->
         <div id="maint-addBook" class="maint-page hidden">
@@ -336,23 +432,38 @@
 
             <label>Type</label>
             <div class="form-row">
-              <input type="radio" name="abType" value="book" checked> Book
-              <input type="radio" name="abType" value="movie"> Movie
+              <label>
+                <input type="radio" name="abType" value="Book" checked> Book
+              </label>
+              <label>
+                <input type="radio" name="abType" value="Movie"> Movie
+              </label>
             </div>
 
-            <div class="form-row"><label>Name of Book/Movie</label><input type="text" id="abName" required></div>
-            <div class="form-row"><label>Author Name</label><input type="text" id="abAuthor" required></div>
-            <div class="form-row"><label>Date of Procurement</label><input type="date" id="abDate" required></div>
-            <div class="form-row"><label>Quantity/Copies</label><input type="number" id="abQty" required min="1"
-                value="1">
+            <div class="form-row">
+              <label>Book/Movie Name</label>
+              <input type="text" id="abName" required>
+            </div>
+
+            <div class="form-row">
+              <label>Date of Procurement</label>
+              <input type="date" id="abDate" required>
+            </div>
+
+            <div class="form-row">
+              <label>Quantity/Copies</label>
+              <input type="number" id="abQty" required min="1" value="1">
             </div>
 
             <div class="actions">
-              <button class="btn" type="button" onclick="showStatus('cancel')">Cancel</button>
+              <button class="btn" type="button" onclick="goBackFromMaintenance()">Cancel</button>
               <button class="btn primary" type="submit">Confirm</button>
             </div>
+
+            <div id="abError" class="error"></div>
           </form>
         </div>
+
 
         <!-- UPDATE BOOK / MOVIE -->
         <div id="maint-updateBook" class="maint-page hidden">
@@ -395,27 +506,38 @@
               <input type="radio" name="umType" value="existing"> Existing User
             </div>
 
-            <div class="form-row"><label>Name</label><input type="text" id="umName" required></div>
-
             <div class="form-row">
-              <label>Status</label>
-              <input type="checkbox" id="umActive"> Active
+              <label>Username</label>
+              <input type="text" id="umUser" required>
             </div>
 
             <div class="form-row">
-              <label>Admin</label>
-              <input type="checkbox" id="umAdmin"> Admin
+              <label>Password</label>
+              <input type="password" id="umPass" required>
             </div>
 
-            <p class="note">Unselecting the checkboxes means: inactive and not an admin.</p>
+            <div class="form-row">
+              <label><input type="checkbox" id="umActive" checked> Active</label>
+            </div>
+
+            <div class="form-row">
+              <label><input type="checkbox" id="umAdmin"> Admin</label>
+            </div>
+
+            <p class="note">
+              For new users, username and password are set here.<br>
+              Unselecting the checkboxes means: inactive and not an admin.
+            </p>
 
             <div class="actions">
-              <button class="btn" type="button" onclick="showStatus('cancel')">Cancel</button>
+              <button class="btn" type="button" onclick="goBackFromMaintenance()">Back</button>
               <button class="btn primary" type="submit">Confirm</button>
             </div>
 
+            <div id="uError" class="error"></div>
           </form>
         </div>
+
 
       </div>
     </section>
