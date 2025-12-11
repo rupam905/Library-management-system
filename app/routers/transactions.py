@@ -1,9 +1,13 @@
-
 from datetime import date, timedelta
-from fastapi import APIRouter, HTTPException, Query, Form
+from fastapi import APIRouter, HTTPException, Query, Form, Depends
+from .auth import require_authenticated
 from ..db import get_connection
 
-router = APIRouter()
+router = APIRouter(
+    prefix="/api/transactions",
+    tags=["transactions"],
+    dependencies=[Depends(require_authenticated)],
+)
 
 DAILY_FINE = 10
 

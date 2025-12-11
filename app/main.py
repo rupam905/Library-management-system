@@ -4,8 +4,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from fastapi import Request
+from dotenv import load_dotenv
 
 from .routers import auth, transactions, reports, maintenance
+
+load_dotenv()
 
 app = FastAPI(title="Library Management System")
 

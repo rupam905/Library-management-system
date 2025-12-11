@@ -1,10 +1,14 @@
 from datetime import date
 from dateutil.relativedelta import relativedelta
-from fastapi import APIRouter, HTTPException, Form
+from fastapi import APIRouter, HTTPException, Form, Depends
+from .auth import require_admin
 from ..db import get_connection
 
-router = APIRouter()
-
+router = APIRouter(dependencies=[Depends(require_admin)])
+#     prefix="/api/maintenance",
+#     tags=["maintenance"],
+#     dependencies=[Depends(require_admin)],
+# )
 
 # ------------------ MEMBERSHIP ------------------ #
 

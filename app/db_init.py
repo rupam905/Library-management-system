@@ -29,6 +29,37 @@ def init_db():
         )
     """)
 
+    
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS product_details (
+            id        INTEGER PRIMARY KEY,
+            code_from TEXT NOT NULL,
+            code_to   TEXT NOT NULL,
+            category  TEXT NOT NULL
+        )
+        """
+    )
+
+    # seed default rows ONLY IF table is empty
+    cur.execute("SELECT COUNT(*) AS cnt FROM product_details")
+    row = cur.fetchone()
+    if row["cnt"] == 0:
+        cur.executemany(
+            """
+            INSERT INTO product_details (code_from, code_to, category)
+            VALUES (?, ?, ?)
+            """,
+            [
+                ("SC(B/M)000001", "SC(B/M)000004", "Science"),
+                ("EC(B/M)000001", "EC(B/M)000004", "Economics"),
+                ("FC(B/M)000001", "FC(B/M)000004", "Fiction"),
+                ("CH(B/M)000001", "CH(B/M)000004", "Children"),
+                ("PD(B/M)000001", "PD(B/M)000004", "Personal Development"),
+            ],
+        )
+
+
     # Members table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS members (

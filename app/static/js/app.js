@@ -1,7 +1,7 @@
 let currentRole = null;
+let currentIssue = null; // Holds current issue across Return Book -> Pay Fine
 
-// Holds the current issue data across Return Book -> Pay Fine
-let currentIssue = null;
+// ---------- SECTION HANDLING ----------
 
 function showSection(id) {
   const ids = [
@@ -12,85 +12,209 @@ function showSection(id) {
     "reportsSection",
     "maintenanceSection",
   ];
-  ids.forEach((s) => document.getElementById(s).classList.add("hidden"));
-  document.getElementById(id).classList.remove("hidden");
+  ids.forEach((s) => {
+    const el = document.getElementById(s);
+    if (el) el.classList.add("hidden");
+  });
+  const target = document.getElementById(id);
+  if (target) target.classList.remove("hidden");
 }
 
 function resetLogin() {
-  document.getElementById("loginUser").value = "";
-  document.getElementById("loginPass").value = "";
-  document.getElementById("loginError").textContent = "";
+  const u = document.getElementById("loginUser");
+  const p = document.getElementById("loginPass");
+  const e = document.getElementById("loginError");
+  if (u) u.value = "";
+  if (p) p.value = "";
+  if (e) e.textContent = "";
 }
 
-async function handleLogin(e) {
-  e.preventDefault();
+// ---------- ROLE-BASED UI ----------
+
+function showAdminMenus() {
+  const maint = document.getElementById("maintenanceSection");
+  if (maint) maint.classList.remove("hidden");
+
+  const reports = document.getElementById("reportsSection");
+  if (reports) reports.classList.remove("hidden");
+  const openMaintBtn = document.getElementById("openMaintenanceBtn");
+  if (openMaintBtn) openMaintBtn.style.display = "inline-block";
+}
+
+function hideAdminMenus() {
+  const maint = document.getElementById("maintenanceSection");
+  if (maint) maint.classList.add("hidden");
+
+  const reports = document.getElementById("reportsSection");
+  if (reports) reports.classList.remove("hidden"); // user can view reports
+  const openMaintBtn = document.getElementById("openMaintenanceBtn");
+  if (openMaintBtn) openMaintBtn.style.display = "none";
+}
+
+async function apiFetch(url, options = {}) {
+  const resp = await fetch(url, options);
+
+  if (resp.status === 401) {
+    console.warn("Not authenticated, redirecting to login");
+    showStatus("cancel");
+    showSection("loginSection");
+    throw new Error("Not authenticated");
+  }
+
+  if (resp.status === 403) {
+    console.warn("Forbidden: admin only");
+    document.getElementById("statusText").textContent =
+      "Admin only. Access denied.";
+    showSection("statusSection");
+    throw new Error("Forbidden");
+  }
+
+  return resp;
+}
+
+// ---------- AUTH: LOGIN / STATUS / LOGOUT ----------
+
+function initLoginForm() {
   const form = document.getElementById("loginForm");
-  const data = new FormData(form);
+  if (!form) return;
 
-  try {
-    const resp = await fetch("/api/auth/login", {
-      method: "POST",
-      body: data,
-    });
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errDiv = document.getElementById("loginError");
+    if (errDiv) errDiv.textContent = "";
 
-    if (!resp.ok) {
-      const err = await resp.json();
-      document.getElementById("loginError").textContent =
-        err.detail || "Login failed";
+    const uEl = document.getElementById("loginUser");
+    const pEl = document.getElementById("loginPass");
+    const username = uEl ? uEl.value.trim() : "";
+    const password = pEl ? pEl.value.trim() : "";
+
+    if (!username || !password) {
+      if (errDiv) errDiv.textContent = "Username and password are required.";
       return;
     }
 
-    const result = await resp.json();
-    currentRole = result.role;
+    const formData = new FormData();
+    formData.append("username", username);
+    formData.append("password", password);
 
-    document.getElementById("homeTitle").textContent =
-      currentRole === "admin" ? "Admin Home Page" : "User Home Page";
+    try {
+      const resp = await fetch("/api/auth/login", {
+        method: "POST",
+        body: formData,
+      });
 
-    document.getElementById("homeBtn").disabled = false;
-    document.getElementById("logoutBtn").disabled = false;
+      const data = await resp.json().catch(() => null);
+      console.log("Login response:", resp.status, data);
 
-    // show maintenance for admin
-    document
-      .querySelectorAll(".admin-only")
-      .forEach(
-        (el) =>
-          (el.style.display = currentRole === "admin" ? "inline-block" : "none")
-      );
+      if (!resp.ok || !data || !data.success) {
+        if (errDiv)
+          errDiv.textContent =
+            (data && data.message) || "Error contacting server";
+        return;
+      }
+
+      const homeBtn = document.getElementById("homeBtn");
+      const logoutBtn = document.getElementById("logoutBtn");
+      if (homeBtn) homeBtn.disabled = false;
+      if (logoutBtn) logoutBtn.disabled = false;
+
+      await checkAuthStatus();
+    } catch (err) {
+      console.error("Login error", err);
+      if (errDiv) errDiv.textContent = "Error contacting server";
+    }
+  });
+}
+
+async function checkAuthStatus() {
+  try {
+    const resp = await fetch("/api/auth/me");
+    console.log("checkAuthStatus /api/auth/me status =", resp.status);
+
+    if (!resp.ok) {
+      showSection("loginSection");
+      const homeBtn = document.getElementById("homeBtn");
+      const logoutBtn = document.getElementById("logoutBtn");
+      if (homeBtn) homeBtn.disabled = true;
+      if (logoutBtn) logoutBtn.disabled = true;
+      return null;
+    }
+
+    const data = await resp.json();
+    console.log("Logged in user:", data);
+    currentRole = data.role;
+
+    const titleEl = document.getElementById("homeTitle");
+    if (data.role && data.role.toLowerCase() === "admin") {
+      if (titleEl) titleEl.textContent = "Admin Home Page";
+      showAdminMenus();
+    } else {
+      if (titleEl) titleEl.textContent = "User Home Page";
+      hideAdminMenus();
+    }
+
+    const homeBtn = document.getElementById("homeBtn");
+    const logoutBtn = document.getElementById("logoutBtn");
+    if (homeBtn) homeBtn.disabled = false;
+    if (logoutBtn) logoutBtn.disabled = false;
 
     showSection("homeSection");
+    return data;
   } catch (err) {
-    document.getElementById("loginError").textContent =
-      "Error contacting server";
+    console.error("checkAuthStatus error", err);
+    showSection("loginSection");
+    return null;
   }
 }
 
+async function logout() {
+  console.log("Logout clicked");
+
+  try {
+    const resp = await fetch("/api/auth/logout", {
+      method: "GET",
+      credentials: "include",
+    });
+    const data = await resp.json().catch(() => null);
+    console.log("Logout response:", resp.status, data);
+  } catch (err) {
+    console.error("Logout error:", err);
+  }
+
+  currentRole = null;
+  const homeBtn = document.getElementById("homeBtn");
+  const logoutBtn = document.getElementById("logoutBtn");
+  if (homeBtn) homeBtn.disabled = true;
+  if (logoutBtn) logoutBtn.disabled = true;
+
+  resetLogin();
+  showSection("loginSection");
+  document.getElementById("statusText").textContent =
+    "You have successfully logged out.";
+}
+
+// ---------- MAINTENANCE NAV ----------
+
 function showMaintPage(name) {
-  // Hide all maintenance pages
   document
     .querySelectorAll(".maint-page")
     .forEach((p) => p.classList.add("hidden"));
 
-  // Show selected maintenance page
   const pageEl = document.getElementById("maint-" + name);
-  if (pageEl) {
-    pageEl.classList.remove("hidden");
-  }
+  if (pageEl) pageEl.classList.remove("hidden");
 
-  // Remove active class from all maintenance menu buttons
   document
     .querySelectorAll("#maintenanceSection .side-menu button")
     .forEach((btn) => btn.classList.remove("active"));
 
-  // Add active class to the button that matches this page
   const activeBtn = document.querySelector(
     `#maintenanceSection .side-menu button[data-page="${name}"]`
   );
-  if (activeBtn) {
-    activeBtn.classList.add("active");
-  }
+  if (activeBtn) activeBtn.classList.add("active");
 }
 
-// Configuration for each report: endpoint, title and columns
+// ---------- REPORTS CONFIG & LOADING ----------
+
 const reportConfig = {
   books: {
     url: "/api/reports/books",
@@ -181,13 +305,14 @@ function showReport(name) {
   );
   if (btn) btn.classList.add("active");
 
-  // Making sure only Reports section is shown
   showSection("reportsSection");
 
   const titleEl = document.getElementById("reportTitle");
   const thead = document.querySelector("#reportTable thead");
   const tbody = document.querySelector("#reportTable tbody");
   const errDiv = document.getElementById("reportError");
+
+  if (!titleEl || !thead || !tbody || !errDiv) return;
 
   titleEl.textContent = cfg.title;
   errDiv.textContent = "";
@@ -205,7 +330,6 @@ function showReport(name) {
 
       const rows = data.results || [];
 
-      // Build table header
       const headRow = document.createElement("tr");
       cfg.columns.forEach((col) => {
         const th = document.createElement("th");
@@ -214,7 +338,6 @@ function showReport(name) {
       });
       thead.appendChild(headRow);
 
-      // No data case
       tbody.innerHTML = "";
       if (rows.length === 0) {
         const tr = document.createElement("tr");
@@ -226,14 +349,12 @@ function showReport(name) {
         return;
       }
 
-      // Fill body
       rows.forEach((row) => {
         const tr = document.createElement("tr");
         cfg.columns.forEach((col) => {
           const td = document.createElement("td");
           let value = row[col.key];
 
-          // Basic formatting for null / booleans
           if (value === null || value === undefined) value = "";
           if (col.key === "fine_paid") value = value ? "Yes" : "No";
 
@@ -246,23 +367,14 @@ function showReport(name) {
     .catch(() => {
       thead.innerHTML = "";
       tbody.innerHTML = "";
-      document.getElementById("reportError").textContent =
-        "Server error while loading report.";
+      errDiv.textContent = "Server error while loading report.";
     });
 }
 
+// ---------- SIMPLE NAV HELPERS ----------
+
 function goHome() {
   showSection("homeSection");
-}
-
-function logout() {
-  currentRole = null;
-  document.getElementById("homeBtn").disabled = true;
-  document.getElementById("logoutBtn").disabled = true;
-  resetLogin();
-  showSection("loginSection");
-  document.getElementById("statusText").textContent =
-    "You have successfully logged out.";
 }
 
 function goBackFromMaintenance() {
@@ -272,8 +384,7 @@ function goBackFromMaintenance() {
 
 function goBackFromTransactions() {
   showSection("transactionSection");
-  // default back to the main transaction list / "Is book available?"
-  showTxnPage("availability"); // adjust page name if your default is different
+  showTxnPage("availability");
 }
 
 function openTransactions() {
@@ -293,117 +404,184 @@ function openMaintenance() {
 
 function showTxnPage(name) {
   const pages = ["availability", "issue", "return", "fine"];
-  pages.forEach((p) =>
-    document.getElementById(`txn-${p}`).classList.add("hidden")
-  );
-  document.getElementById(`txn-${name}`).classList.remove("hidden");
+  pages.forEach((p) => {
+    const el = document.getElementById(`txn-${p}`);
+    if (el) el.classList.add("hidden");
+  });
+  const target = document.getElementById(`txn-${name}`);
+  if (target) target.classList.remove("hidden");
 }
 
-/* Availability */
-document.getElementById("availForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const title = document.getElementById("availTitle").value.trim();
-  const author = document.getElementById("availAuthor").value.trim();
-  const errDiv = document.getElementById("availError");
-  const tbody = document.querySelector("#availResults tbody");
-  tbody.innerHTML = "";
+// ---------- AVAILABILITY ----------
 
-  if (!title && !author) {
-    errDiv.textContent = "Please enter book name or author.";
-    return;
-  }
-  errDiv.textContent = "";
+function initAvailability() {
+  const form = document.getElementById("availForm");
+  if (!form) return;
 
-  const params = new URLSearchParams({ book: title, author });
-  try {
-    const resp = await fetch(
-      `/api/transactions/availability?${params.toString()}`
-    );
-    const data = await resp.json();
-    if (resp.status >= 400) {
-      errDiv.textContent = data.detail || "Error searching";
-      return;
-    }
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const titleEl = document.getElementById("availTitle");
+    const authorEl = document.getElementById("availAuthor");
+    const errDiv = document.getElementById("availError");
+    const tbody = document.querySelector("#availResults tbody");
+    if (!titleEl || !authorEl || !errDiv || !tbody) return;
 
-    data.results.forEach((b) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td><input type="radio" name="selBook"
-                   data-name="${b.name}"
-                   data-author="${b.author}"
-                   data-serial="${b.serial_no}"></td>
-        <td>${b.name}</td>
-        <td>${b.author}</td>
-        <td>${b.serial_no}</td>
-        <td>${b.status === "Available" ? "Y" : "N"}</td>
-      `;
-      tbody.appendChild(tr);
-    });
-  } catch (err) {
-    errDiv.textContent = "Server error.";
-  }
-});
+    const title = titleEl.value.trim();
+    const author = authorEl.value.trim();
+    tbody.innerHTML = "";
 
-/* Issue */
-document.getElementById("issueForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const member = document.getElementById("issueMember").value.trim();
-  const name = document.getElementById("issueBookName").value.trim();
-  const author = document.getElementById("issueAuthor").value.trim();
-  const serial = document.getElementById("issueSerial").value.trim();
-  const issueDate = document.getElementById("issueDate").value;
-  const returnDate = document.getElementById("issueReturnDate").value;
-  const remarks = document.getElementById("issueRemarks").value.trim();
-  const errDiv = document.getElementById("issueError");
-
-  if (!member || !name || !author || !serial || !issueDate || !returnDate) {
-    errDiv.textContent = "All fields except remarks are mandatory.";
-    return;
-  }
-
-  const formData = new FormData();
-  formData.append("serial_no", serial);
-  formData.append("membership_id", member);
-  formData.append("issue_date", issueDate);
-  formData.append("planned_return", returnDate);
-  formData.append("remarks", remarks);
-
-  try {
-    const resp = await fetch("/api/transactions/issue", {
-      method: "POST",
-      body: formData,
-    });
-    const data = await resp.json();
-    if (resp.status >= 400) {
-      errDiv.textContent = data.detail || "Issue failed.";
+    if (!title && !author) {
+      errDiv.textContent = "Please enter book name or author.";
       return;
     }
     errDiv.textContent = "";
-    showStatus("success");
-  } catch (err) {
-    errDiv.textContent = "Server error.";
-  }
-});
 
-// RETURN BOOK FLOW
-document.addEventListener("DOMContentLoaded", () => {
-  const form = document.getElementById("returnForm");
-  if (!form) {
-    console.error("returnForm not found in DOM");
-    return;
+    const params = new URLSearchParams({ book: title, author });
+    try {
+      const resp = await fetch(
+        `/api/transactions/availability?${params.toString()}`
+      );
+      const data = await resp.json();
+      if (resp.status >= 400) {
+        errDiv.textContent = data.detail || "Error searching";
+        return;
+      }
+
+      data.results.forEach((b) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><input type="radio" name="selBook"
+                     data-name="${b.name}"
+                     data-author="${b.author}"
+                     data-serial="${b.serial_no}"></td>
+          <td>${b.name}</td>
+          <td>${b.author}</td>
+          <td>${b.serial_no}</td>
+          <td>${b.status === "Available" ? "Y" : "N"}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    } catch (err) {
+      errDiv.textContent = "Server error.";
+    }
+  });
+}
+
+// ---------- PRODUCT DETAILS (HOME) ----------
+
+async function loadProductDetails() {
+  const tbody = document.getElementById("productDetailsBody");
+  if (!tbody) return;
+
+  tbody.innerHTML = "";
+
+  try {
+    const resp = await fetch("/api/reports/product-details");
+    if (!resp.ok) {
+      console.error("Failed to fetch product details", resp.status);
+      return;
+    }
+
+    const data = await resp.json();
+
+    if (!Array.isArray(data) || data.length === 0) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 3;
+      td.textContent = "No product details configured.";
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      return;
+    }
+
+    data.forEach((row) => {
+      const tr = document.createElement("tr");
+
+      const tdFrom = document.createElement("td");
+      tdFrom.textContent = row.code_from;
+      tr.appendChild(tdFrom);
+
+      const tdTo = document.createElement("td");
+      tdTo.textContent = row.code_to;
+      tr.appendChild(tdTo);
+
+      const tdCat = document.createElement("td");
+      tdCat.textContent = row.category;
+      tr.appendChild(tdCat);
+
+      tbody.appendChild(tr);
+    });
+  } catch (err) {
+    console.error("Error loading product details", err);
   }
+}
+
+// ---------- ISSUE BOOK ----------
+
+function initIssue() {
+  const form = document.getElementById("issueForm");
+  if (!form) return;
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const member = document.getElementById("issueMember")?.value.trim();
+    const name = document.getElementById("issueBookName")?.value.trim();
+    const author = document.getElementById("issueAuthor")?.value.trim();
+    const serial = document.getElementById("issueSerial")?.value.trim();
+    const issueDate = document.getElementById("issueDate")?.value;
+    const returnDate = document.getElementById("issueReturnDate")?.value;
+    const remarks = document.getElementById("issueRemarks")?.value.trim();
+    const errDiv = document.getElementById("issueError");
+    if (!errDiv) return;
+
+    if (!member || !name || !author || !serial || !issueDate || !returnDate) {
+      errDiv.textContent = "All fields except remarks are mandatory.";
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("serial_no", serial);
+    formData.append("membership_id", member);
+    formData.append("issue_date", issueDate);
+    formData.append("planned_return", returnDate);
+    formData.append("remarks", remarks || "");
+
+    try {
+      const resp = await fetch("/api/transactions/issue", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await resp.json();
+      if (resp.status >= 400) {
+        errDiv.textContent = data.detail || "Issue failed.";
+        return;
+      }
+      errDiv.textContent = "";
+      showStatus("success");
+    } catch (err) {
+      errDiv.textContent = "Server error.";
+    }
+  });
+}
+
+// ---------- RETURN BOOK FLOW ----------
+
+function initReturn() {
+  const form = document.getElementById("returnForm");
+  if (!form) return;
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     console.log("Return Book: submit handler triggered");
 
     const errDiv = document.getElementById("rbError");
+    if (!errDiv) return;
     errDiv.textContent = "";
 
-    const memberId = document.getElementById("rbMemberId").value.trim();
-    const serial = document.getElementById("rbSerial").value.trim();
-    const newReturnDate = document.getElementById("rbReturnDate").value;
-    const remarks = document.getElementById("rbRemarks").value.trim();
+    const memberId = document.getElementById("rbMemberId")?.value.trim();
+    const serial = document.getElementById("rbSerial")?.value.trim();
+    const newReturnDate = document.getElementById("rbReturnDate")?.value;
+    const remarks = document.getElementById("rbRemarks")?.value.trim();
 
     if (!memberId || !serial) {
       errDiv.textContent = "Membership Id and Serial No are mandatory.";
@@ -417,7 +595,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (remarks) formData.append("remarks", remarks);
 
     try {
-      // TODO: adjust endpoint if your route name is different
       const resp = await fetch("/api/transactions/return/start", {
         method: "POST",
         body: formData,
@@ -432,10 +609,8 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // store globally for Pay Fine
       currentIssue = data;
 
-      // Fill Pay Fine screen fields
       document.getElementById("pfBookName").value = data.book_name || "";
       document.getElementById("pfAuthor").value = data.author || "";
       document.getElementById("pfSerial").value = data.serial_no || serial;
@@ -447,10 +622,9 @@ document.addEventListener("DOMContentLoaded", () => {
         data.fine_amount ?? 0
       ).toString();
       document.getElementById("pfFinePaid").checked = false;
-      document.getElementById("pfRemarks").value = remarks;
+      document.getElementById("pfRemarks").value = remarks || "";
       document.getElementById("pfError").textContent = "";
 
-      // Fill Return Book read-only info too
       document.getElementById("rbBookName").value = data.book_name || "";
       document.getElementById("rbAuthor").value = data.author || "";
       document.getElementById("rbIssueDate").value = data.issue_date || "";
@@ -458,23 +632,24 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("rbReturnDate").value = data.return_date;
       }
 
-      // Move to Pay Fine screen
       showTxnPage("fine");
     } catch (err) {
       console.error(err);
       errDiv.textContent = "Server error.";
     }
   });
-});
+}
 
-// PAY FINE FLOW
-(function attachFineHandler() {
+// ---------- PAY FINE FLOW ----------
+
+function initFine() {
   const form = document.getElementById("fineForm");
   if (!form) return;
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const errDiv = document.getElementById("pfError");
+    if (!errDiv) return;
     errDiv.textContent = "";
 
     if (!currentIssue || !currentIssue.issue_id) {
@@ -482,19 +657,18 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    const actualReturn = document.getElementById("pfActualReturn").value;
+    const actualReturn = document.getElementById("pfActualReturn")?.value;
     const fineAmount = parseFloat(
-      document.getElementById("pfFine").value || "0"
+      document.getElementById("pfFine")?.value || "0"
     );
-    const finePaid = document.getElementById("pfFinePaid").checked;
-    const remarks = document.getElementById("pfRemarks").value.trim();
+    const finePaid = document.getElementById("pfFinePaid")?.checked;
+    const remarks = document.getElementById("pfRemarks")?.value.trim();
 
     if (!actualReturn) {
       errDiv.textContent = "Actual return date is mandatory.";
       return;
     }
 
-    // If fine > 0, checkbox MUST be selected
     if (fineAmount > 0 && !finePaid) {
       errDiv.textContent =
         "Fine is pending. Please select 'Fine Paid' to complete the return.";
@@ -505,10 +679,9 @@ document.addEventListener("DOMContentLoaded", () => {
     formData.append("issue_id", currentIssue.issue_id);
     formData.append("actual_return_date", actualReturn);
     formData.append("fine_paid", finePaid ? "true" : "false");
-    formData.append("remarks", remarks);
+    formData.append("remarks", remarks || "");
 
     try {
-      // Adjust URL to your actual pay-fine endpoint
       const resp = await fetch("/api/transactions/fine", {
         method: "POST",
         body: formData,
@@ -521,14 +694,15 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       errDiv.textContent = "Transaction completed successfully.";
-      // Book returned, clear current issue
       currentIssue = null;
     } catch (err) {
       console.error(err);
       errDiv.textContent = "Server error.";
     }
   });
-})();
+}
+
+// ---------- STATUS TEXT ----------
 
 function showStatus(type) {
   const text =
@@ -537,310 +711,266 @@ function showStatus(type) {
       : type === "logout"
       ? "You have successfully logged out."
       : "Transaction completed successfully.";
-  document.getElementById("statusText").textContent = text;
+  const el = document.getElementById("statusText");
+  if (el) el.textContent = text;
   showSection("statusSection");
 }
 
-/* Maintenance: Add membership */
-// Add Membership
-document
-  .getElementById("addMemberForm")
-  .addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const errDiv = document.getElementById("amError");
+// ---------- MAINTENANCE: MEMBERSHIP ----------
 
-    const formData = new FormData();
-    formData.append(
-      "membership_id",
-      document.getElementById("amId").value.trim()
-    );
-    formData.append(
-      "first_name",
-      document.getElementById("amFirst").value.trim()
-    );
-    formData.append(
-      "last_name",
-      document.getElementById("amLast").value.trim()
-    );
-    formData.append("phone", document.getElementById("amPhone").value.trim());
-    formData.append(
-      "address",
-      document.getElementById("amAddress").value.trim()
-    );
-    formData.append("aadhar", document.getElementById("amAadhar").value.trim());
-    formData.append("start_date", document.getElementById("amStart").value);
-    formData.append("plan", document.getElementById("amPlan").value);
+function initMembership() {
+  const addForm = document.getElementById("addMemberForm");
+  if (addForm) {
+    addForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const errDiv = document.getElementById("amError");
+      if (!errDiv) return;
 
-    try {
-      const resp = await fetch("/api/maintenance/membership/add", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await resp.json();
-      if (!resp.ok) {
-        errDiv.textContent = data.detail || "Error adding membership";
-        return;
+      const formData = new FormData();
+      formData.append(
+        "membership_id",
+        document.getElementById("amId").value.trim()
+      );
+      formData.append(
+        "first_name",
+        document.getElementById("amFirst").value.trim()
+      );
+      formData.append(
+        "last_name",
+        document.getElementById("amLast").value.trim()
+      );
+      formData.append("phone", document.getElementById("amPhone").value.trim());
+      formData.append(
+        "address",
+        document.getElementById("amAddress").value.trim()
+      );
+      formData.append(
+        "aadhar",
+        document.getElementById("amAadhar").value.trim()
+      );
+      formData.append("start_date", document.getElementById("amStart").value);
+      formData.append("plan", document.getElementById("amPlan").value);
+
+      try {
+        const resp = await fetch("/api/maintenance/membership/add", {
+          method: "POST",
+          body: formData,
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          errDiv.textContent = data.detail || "Error adding membership";
+          return;
+        }
+        errDiv.textContent = "Membership added successfully.";
+      } catch {
+        errDiv.textContent = "Server error.";
       }
-      errDiv.textContent = "Membership added successfully.";
-    } catch {
-      errDiv.textContent = "Server error.";
-    }
-  });
-
-// Auto-load membership info when ID loses focus
-document.getElementById("umId").addEventListener("blur", async () => {
-  const id = document.getElementById("umId").value.trim();
-  const info = document.getElementById("umInfo");
-  const errDiv = document.getElementById("umError");
-  if (!id) return;
-
-  try {
-    const resp = await fetch(`/api/maintenance/membership/${id}`);
-    const data = await resp.json();
-    if (!resp.ok) {
-      info.textContent = "";
-      errDiv.textContent = data.detail || "Membership not found";
-      return;
-    }
-    errDiv.textContent = "";
-    info.textContent = `Current status: ${data.status}, End date: ${data.end_date}`;
-  } catch {
-    info.textContent = "";
-    errDiv.textContent = "Server error.";
+    });
   }
-});
 
-// Submit update membership action
-document
-  .getElementById("updateMemberForm")
-  .addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const errDiv = document.getElementById("umError");
+  const umId = document.getElementById("umId");
+  if (umId) {
+    umId.addEventListener("blur", async () => {
+      const id = document.getElementById("umId").value.trim();
+      const info = document.getElementById("umInfo");
+      const errDiv = document.getElementById("umError");
+      if (!id || !info || !errDiv) return;
 
-    const membershipId = document.getElementById("umId").value.trim();
-    const action = document.querySelector(
-      "input[name='umAction']:checked"
-    ).value;
+      try {
+        const resp = await fetch(`/api/maintenance/membership/${id}`);
+        const data = await resp.json();
+        if (!resp.ok) {
+          info.textContent = "";
+          errDiv.textContent = data.detail || "Membership not found";
+          return;
+        }
+        errDiv.textContent = "";
+        info.textContent = `Current status: ${data.status}, End date: ${data.end_date}`;
+      } catch {
+        info.textContent = "";
+        errDiv.textContent = "Server error.";
+      }
+    });
+  }
 
-    const formData = new FormData();
-    formData.append("membership_id", membershipId);
-    formData.append("action", action);
+  const updateForm = document.getElementById("updateMemberForm");
+  if (updateForm) {
+    updateForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const errDiv = document.getElementById("umError");
+      if (!errDiv) return;
 
-    try {
-      const resp = await fetch("/api/maintenance/membership/update", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await resp.json();
-      if (!resp.ok) {
-        errDiv.textContent = data.detail || "Update failed";
+      const membershipId = document.getElementById("umId").value.trim();
+      const actionEl = document.querySelector("input[name='umAction']:checked");
+      if (!actionEl) {
+        errDiv.textContent = "Please select an action.";
         return;
       }
-      errDiv.textContent = `Membership updated. New end date: ${data.new_end_date}, status: ${data.status}`;
-    } catch {
-      errDiv.textContent = "Server error.";
-    }
-  });
+      const action = actionEl.value;
 
-/* Maintenance: Add book */
-// Maintenance: Add Book/Movie
-document.addEventListener("DOMContentLoaded", () => {
+      const formData = new FormData();
+      formData.append("membership_id", membershipId);
+      formData.append("action", action);
+
+      try {
+        const resp = await fetch("/api/maintenance/membership/update", {
+          method: "POST",
+          body: formData,
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          errDiv.textContent = data.detail || "Update failed";
+          return;
+        }
+        errDiv.textContent = `Membership updated. New end date: ${data.new_end_date}, status: ${data.status}`;
+      } catch {
+        errDiv.textContent = "Server error.";
+      }
+    });
+  }
+}
+
+// ---------- MAINTENANCE: ADD / UPDATE BOOK ----------
+
+function initBookMaintenance() {
   const addBookForm = document.getElementById("addBookForm");
-  if (!addBookForm) return;
+  if (addBookForm) {
+    addBookForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
 
-  addBookForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
+      const errDiv = document.getElementById("abError");
+      if (!errDiv) return;
+      errDiv.textContent = "";
 
-    const errDiv = document.getElementById("abError");
-    if (errDiv) errDiv.textContent = "";
+      const typeRadio = document.querySelector("input[name='abType']:checked");
+      const type = typeRadio ? typeRadio.value : "book";
+      const name = document.getElementById("abName").value.trim();
+      const procurementDate = document.getElementById("abDate").value;
+      const qty = parseInt(document.getElementById("abQty").value, 10) || 1;
 
-    const typeRadio = document.querySelector("input[name='abType']:checked");
-    const type = typeRadio ? typeRadio.value : "Book"; // "Book" or "Movie"
-    const name = document.getElementById("abName").value.trim();
-    const procurementDate = document.getElementById("abDate").value;
-    const qty = parseInt(document.getElementById("abQty").value, 10) || 1;
-
-    if (!name || !procurementDate || qty <= 0) {
-      if (errDiv) errDiv.textContent = "All fields are mandatory and quantity must be ≥ 1.";
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("type", type);
-    formData.append("name", name);
-    formData.append("procurement_date", procurementDate);
-    formData.append("quantity", String(qty));
-
-    try {
-      const resp = await fetch("/api/maintenance/book/add", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await resp.json();
-      console.log("AddBook response", resp.status, data);
-
-      if (!resp.ok) {
-        if (errDiv) errDiv.textContent = data.detail || "Error adding book/movie.";
+      if (!name || !procurementDate || qty <= 0) {
+        errDiv.textContent =
+          "All fields are mandatory and quantity must be ≥ 1.";
         return;
       }
 
-      if (errDiv) errDiv.textContent = "Book/Movie added successfully.";
+      const formData = new FormData();
+      formData.append("type", type);
+      formData.append("name", name);
+      formData.append("procurement_date", procurementDate);
+      formData.append("quantity", String(qty));
 
-      // reset form
-      document.getElementById("abName").value = "";
-      document.getElementById("abDate").value = "";
-      document.getElementById("abQty").value = "1";
+      try {
+        const resp = await fetch("/api/maintenance/book/add", {
+          method: "POST",
+          body: formData,
+        });
+        const data = await resp.json();
+        console.log("AddBook response", resp.status, data);
 
-    } catch (err) {
-      console.error("AddBook error", err);
-      if (errDiv) errDiv.textContent = "Server error.";
-    }
-  });
-});
+        if (!resp.ok) {
+          errDiv.textContent = data.detail || "Error adding book/movie.";
+          return;
+        }
 
-
-// Auto-load book details based on serial no
-document.getElementById("ubSerial").addEventListener("blur", async () => {
-  const serial = document.getElementById("ubSerial").value.trim();
-  const info = document.getElementById("ubInfo");
-  const errDiv = document.getElementById("ubError");
-  if (!serial) return;
-
-  try {
-    const resp = await fetch(`/api/maintenance/book/${serial}`);
-    const data = await resp.json();
-    if (!resp.ok) {
-      info.textContent = "";
-      errDiv.textContent = data.detail || "Book/Movie not found";
-      return;
-    }
-    errDiv.textContent = "";
-    info.textContent = `Type: ${data.type}, Status: ${data.status}`;
-    document.getElementById("ubName").value = data.name;
-    document.getElementById("ubAuthor").value = data.author;
-    document.getElementById("ubCategory").value = data.category;
-    document.getElementById("ubStatus").value = data.status;
-    document.getElementById("ubDate").value = data.procurement_date || "";
-  } catch {
-    info.textContent = "";
-    errDiv.textContent = "Server error.";
+        errDiv.textContent = "Book/Movie added successfully.";
+        document.getElementById("abName").value = "";
+        document.getElementById("abDate").value = "";
+        document.getElementById("abQty").value = "1";
+      } catch (err) {
+        console.error("AddBook error", err);
+        errDiv.textContent = "Server error.";
+      }
+    });
   }
-});
 
-document
-  .getElementById("updateBookForm")
-  .addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const errDiv = document.getElementById("ubError");
+  const ubSerialInput = document.getElementById("ubSerial");
+  if (ubSerialInput) {
+    ubSerialInput.addEventListener("blur", async () => {
+      const serial = document.getElementById("ubSerial").value.trim();
+      const info = document.getElementById("ubInfo");
+      const errDiv = document.getElementById("ubError");
+      if (!serial || !info || !errDiv) return;
 
-    const formData = new FormData();
-    formData.append(
-      "serial_no",
-      document.getElementById("ubSerial").value.trim()
-    );
-    formData.append("name", document.getElementById("ubName").value.trim());
-    formData.append("author", document.getElementById("ubAuthor").value.trim());
-    formData.append(
-      "category",
-      document.getElementById("ubCategory").value.trim()
-    );
-    formData.append("status", document.getElementById("ubStatus").value);
-    formData.append(
-      "procurement_date",
-      document.getElementById("ubDate").value
-    );
-
-    try {
-      const resp = await fetch("/api/maintenance/book/update", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await resp.json();
-      if (!resp.ok) {
-        errDiv.textContent = data.detail || "Update failed";
-        return;
+      try {
+        const resp = await fetch(`/api/maintenance/book/${serial}`);
+        const data = await resp.json();
+        if (!resp.ok) {
+          info.textContent = "";
+          errDiv.textContent = data.detail || "Book/Movie not found";
+          return;
+        }
+        errDiv.textContent = "";
+        info.textContent = `Type: ${data.type}, Status: ${data.status}`;
+        document.getElementById("ubName").value = data.name;
+        document.getElementById("ubAuthor").value = data.author;
+        document.getElementById("ubCategory").value = data.category;
+        document.getElementById("ubStatus").value = data.status;
+        document.getElementById("ubDate").value = data.procurement_date || "";
+      } catch {
+        info.textContent = "";
+        errDiv.textContent = "Server error.";
       }
-      errDiv.textContent = "Book/Movie updated.";
-    } catch {
-      errDiv.textContent = "Server error.";
-    }
-  });
-
-// Auto-load book details based on serial no
-document.getElementById("ubSerial").addEventListener("blur", async () => {
-  const serial = document.getElementById("ubSerial").value.trim();
-  const info = document.getElementById("ubInfo");
-  const errDiv = document.getElementById("ubError");
-  if (!serial) return;
-
-  try {
-    const resp = await fetch(`/api/maintenance/book/${serial}`);
-    const data = await resp.json();
-    if (!resp.ok) {
-      info.textContent = "";
-      errDiv.textContent = data.detail || "Book/Movie not found";
-      return;
-    }
-    errDiv.textContent = "";
-    info.textContent = `Type: ${data.type}, Status: ${data.status}`;
-    document.getElementById("ubName").value = data.name;
-    document.getElementById("ubAuthor").value = data.author;
-    document.getElementById("ubCategory").value = data.category;
-    document.getElementById("ubStatus").value = data.status;
-    document.getElementById("ubDate").value = data.procurement_date || "";
-  } catch {
-    info.textContent = "";
-    errDiv.textContent = "Server error.";
+    });
   }
-});
 
-document
-  .getElementById("updateBookForm")
-  .addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const errDiv = document.getElementById("ubError");
+  const updateBookForm = document.getElementById("updateBookForm");
+  if (updateBookForm) {
+    updateBookForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const errDiv = document.getElementById("ubError");
+      if (!errDiv) return;
 
-    const formData = new FormData();
-    formData.append(
-      "serial_no",
-      document.getElementById("ubSerial").value.trim()
-    );
-    formData.append("name", document.getElementById("ubName").value.trim());
-    formData.append("author", document.getElementById("ubAuthor").value.trim());
-    formData.append(
-      "category",
-      document.getElementById("ubCategory").value.trim()
-    );
-    formData.append("status", document.getElementById("ubStatus").value);
-    formData.append(
-      "procurement_date",
-      document.getElementById("ubDate").value
-    );
+      const formData = new FormData();
+      formData.append(
+        "serial_no",
+        document.getElementById("ubSerial").value.trim()
+      );
+      formData.append("name", document.getElementById("ubName").value.trim());
+      formData.append(
+        "author",
+        document.getElementById("ubAuthor").value.trim()
+      );
+      formData.append(
+        "category",
+        document.getElementById("ubCategory").value.trim()
+      );
+      formData.append("status", document.getElementById("ubStatus").value);
+      formData.append(
+        "procurement_date",
+        document.getElementById("ubDate").value
+      );
 
-    try {
-      const resp = await fetch("/api/maintenance/book/update", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await resp.json();
-      if (!resp.ok) {
-        errDiv.textContent = data.detail || "Update failed";
-        return;
+      try {
+        const resp = await fetch("/api/maintenance/book/update", {
+          method: "POST",
+          body: formData,
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          errDiv.textContent = data.detail || "Update failed";
+          return;
+        }
+        errDiv.textContent = "Book/Movie updated.";
+      } catch {
+        errDiv.textContent = "Server error.";
       }
-      errDiv.textContent = "Book/Movie updated.";
-    } catch {
-      errDiv.textContent = "Server error.";
-    }
-  });
+    });
+  }
+}
 
-// User Management
-document
-  .getElementById("userMgmtForm")
-  .addEventListener("submit", async (e) => {
+// ---------- USER MANAGEMENT ----------
+
+function initUserMgmt() {
+  const form = document.getElementById("userMgmtForm");
+  if (!form) return;
+
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const errDiv = document.getElementById("uError");
+    if (!errDiv) return;
 
-    const mode = document.querySelector("input[name='umType']:checked").value; // new / existing
+    const mode = document.querySelector("input[name='umType']:checked").value;
     const username = document.getElementById("umUser").value.trim();
     const password = document.getElementById("umPass").value;
     const isActive = document.getElementById("umActive").checked;
@@ -875,5 +1005,22 @@ document
       errDiv.textContent = "Server error.";
     }
   });
+}
 
-document.getElementById("loginForm").addEventListener("submit", handleLogin);
+// ---------- GLOBAL INIT ON PAGE LOAD ----------
+
+document.addEventListener("DOMContentLoaded", async () => {
+  initLoginForm();
+  initAvailability();
+  initIssue();
+  initReturn();
+  initFine();
+  initMembership();
+  initBookMaintenance();
+  initUserMgmt();
+
+  const loggedIn = await checkAuthStatus();
+  if (loggedIn) {
+    loadProductDetails();
+  }
+});
