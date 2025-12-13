@@ -197,7 +197,6 @@
             <div class="actions" style="margin-bottom:8px;">
               <button type="button" class="btn" id="rbFindBtn">Find Issue</button>
               <button type="button" class="btn" id="rbClearBtn">Clear</button>
-              <button type="submit" class="btn primary">Start Return</button>
             </div>
         
             <div id="rbError" class="error"></div>
@@ -221,7 +220,11 @@
             <!-- USER CAN CHANGE PLANNED RETURN DATE -->
             <div class="form-row">
               <label>Planned Return Date</label>
-              <input type="date" id="rbReturnDate">
+              <input type="date" id="rbReturnDate" readonly>
+            </div>
+            <div class="form-row">
+              <label>Actual Return Date <span class="required">*</span></label>
+              <input type="date" id="rbActualReturnDate">      
             </div>
         
             <!-- AUTO-CALCULATED FINE -->
@@ -238,7 +241,7 @@
             <!-- PROCEED BUTTON -->
             <div class="actions">
               <button type="button" class="btn" onclick="goBackFromTransactions()">Back</button>
-              <button type="button" class="btn primary" id="rbProceedBtn">Proceed to Pay/Complete</button>
+              <button type="button" class="btn primary" id="rbProceedBtn">Proceed</button>
             </div>
           </form>
         </div>
@@ -246,7 +249,7 @@
 
         <!-- PAY FINE -->
         <div id="txn-fine" class="txn-page hidden">
-          <h2>Pay Fine / Complete Return</h2>
+          <h2>Pay Fine</h2>
         
           <form id="fineForm">
         
