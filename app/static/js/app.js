@@ -404,67 +404,273 @@ function openMaintenance() {
 
 function showTxnPage(name) {
   const pages = ["availability", "issue", "return", "fine"];
+
+  // hide all transaction pages
   pages.forEach((p) => {
     const el = document.getElementById(`txn-${p}`);
     if (el) el.classList.add("hidden");
   });
+
+  // show selected page
   const target = document.getElementById(`txn-${name}`);
   if (target) target.classList.remove("hidden");
+
+  // ------------ NEW: highlight active menu button ------------
+  const allBtns = document.querySelectorAll(
+    "#transactionSection .side-menu button"
+  );
+  allBtns.forEach((btn) => btn.classList.remove("active"));
+
+  const activeBtn = document.querySelector(
+    `#transactionSection .side-menu button[onclick="showTxnPage('${name}')"]`
+  );
+
+  if (activeBtn) activeBtn.classList.add("active");
 }
 
 // ---------- AVAILABILITY ----------
 
 function initAvailability() {
   const form = document.getElementById("availForm");
-  if (!form) return;
+  const titleEl = document.getElementById("availTitle");
+  const authorEl = document.getElementById("availAuthor");
+  const errDiv = document.getElementById("availError");
+  const tbody = document.querySelector("#availResults tbody");
+  const takeBtn = document.getElementById("availTakeToIssueBtn");
+  const clearBtn = document.getElementById("availClearBtn"); // NEW
+  const countEl = document.getElementById("availCount"); // NEW
 
+  if (!form || !titleEl || !authorEl || !errDiv || !tbody) return;
+
+  // ---------------- INTERNAL RENDERER ----------------
+  function loadRows(rows) {
+    tbody.innerHTML = "";
+    if (!rows || rows.length === 0) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td colspan="5">No books found.</td>`;
+      tbody.appendChild(tr);
+      updateCount(rows || []);
+      return;
+    }
+
+    rows.forEach((b) => {
+      const tr = document.createElement("tr");
+      const available = b.status === "Available" ? "Y" : "N";
+
+      tr.innerHTML = `
+        <td>
+          <input type="radio" name="selBook"
+                 data-name="${b.name ?? ""}"
+                 data-author="${b.author ?? ""}"
+                 data-serial="${b.serial_no ?? ""}"
+                 ${b.status !== "Available" ? "disabled" : ""}>
+        </td>
+        <td>${b.name ?? ""}</td>
+        <td>${b.author ?? ""}</td>
+        <td>${b.serial_no ?? ""}</td>
+        <td>${available}</td>
+      `;
+
+      const radio = tr.querySelector("input[type='radio']");
+
+      // Row highlight when selecting
+      if (radio) {
+        radio.addEventListener("change", () => {
+          document
+            .querySelectorAll("#availResults tbody tr")
+            .forEach((r) => r.classList.remove("avail-selected-row"));
+          tr.classList.add("avail-selected-row");
+        });
+      }
+
+      // Double-click row → auto issue
+      tr.addEventListener("dblclick", () => {
+        if (!radio || radio.disabled) return;
+        radio.checked = true;
+        radio.dispatchEvent(new Event("change", { bubbles: true }));
+        if (takeBtn) takeBtn.click();
+      });
+
+      tbody.appendChild(tr);
+    });
+
+    updateCount(rows);
+  }
+
+  // update count label: show total and available count
+  function updateCount(rows) {
+    if (!countEl) return;
+    const total = rows ? rows.length : 0;
+    const avail = rows
+      ? rows.filter((r) => r.status === "Available").length
+      : 0;
+    // If everything is available (typical default), show "Available Books: X"
+    if (total > 0 && total === avail) {
+      countEl.textContent = `Available Books: ${avail}`;
+    } else {
+      countEl.textContent = `Books shown: ${total} (Available: ${avail})`;
+    }
+  }
+
+  // ---------------- LOAD AVAILABLE BOOKS BY DEFAULT ----------------
+  let currentRows = [];
+
+  async function loadMasterListAvailable() {
+    if (countEl) countEl.textContent = "Loading books...";
+    tbody.innerHTML = "<tr><td>Loading...</td></tr>";
+    errDiv.textContent = "";
+    try {
+      const resp = await fetch("/api/reports/books");
+      const data = await resp.json();
+      if (!resp.ok) {
+        tbody.innerHTML = "";
+        errDiv.textContent = data.detail || "Error loading book list";
+        if (countEl) countEl.textContent = "";
+        return;
+      }
+
+      const rows = data.results || [];
+      const onlyAvail = rows.filter((r) => r.status === "Available");
+
+      currentRows = onlyAvail;
+      loadRows(currentRows);
+    } catch (e) {
+      tbody.innerHTML = "";
+      errDiv.textContent = "Server error while loading book list.";
+      if (countEl) countEl.textContent = "";
+      console.error("loadMasterListAvailable:", e);
+    }
+  }
+
+  // ---------------- SEARCH SUBMIT ----------------
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const titleEl = document.getElementById("availTitle");
-    const authorEl = document.getElementById("availAuthor");
-    const errDiv = document.getElementById("availError");
-    const tbody = document.querySelector("#availResults tbody");
-    if (!titleEl || !authorEl || !errDiv || !tbody) return;
+    errDiv.textContent = "";
+    tbody.innerHTML = "";
 
     const title = titleEl.value.trim();
     const author = authorEl.value.trim();
-    tbody.innerHTML = "";
 
     if (!title && !author) {
-      errDiv.textContent = "Please enter book name or author.";
+      await loadMasterListAvailable();
       return;
     }
-    errDiv.textContent = "";
 
-    const params = new URLSearchParams({ book: title, author });
     try {
+      const params = new URLSearchParams({ book: title, author });
       const resp = await fetch(
         `/api/transactions/availability?${params.toString()}`
       );
       const data = await resp.json();
-      if (resp.status >= 400) {
+
+      if (!resp.ok) {
+        tbody.innerHTML = "";
         errDiv.textContent = data.detail || "Error searching";
+        if (countEl) countEl.textContent = "";
         return;
       }
 
-      data.results.forEach((b) => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td><input type="radio" name="selBook"
-                     data-name="${b.name}"
-                     data-author="${b.author}"
-                     data-serial="${b.serial_no}"></td>
-          <td>${b.name}</td>
-          <td>${b.author}</td>
-          <td>${b.serial_no}</td>
-          <td>${b.status === "Available" ? "Y" : "N"}</td>
-        `;
-        tbody.appendChild(tr);
-      });
+      currentRows = data.results || [];
+      loadRows(currentRows);
     } catch (err) {
-      errDiv.textContent = "Server error.";
+      tbody.innerHTML = "";
+      errDiv.textContent = "Server error while searching.";
+      if (countEl) countEl.textContent = "";
+      console.error("availability search error:", err);
     }
   });
+
+  // ---------------- LIVE FILTERING WHILE TYPING ----------------
+  function debounce(fn, delay) {
+    let t;
+    return function (...args) {
+      clearTimeout(t);
+      t = setTimeout(() => fn.apply(this, args), delay);
+    };
+  }
+
+  const liveFilter = debounce(() => {
+    const qTitle = titleEl.value.trim().toLowerCase();
+    const qAuthor = authorEl.value.trim().toLowerCase();
+
+    if (!currentRows || currentRows.length === 0) {
+      // nothing to filter locally
+      return;
+    }
+
+    const filtered = currentRows.filter((r) => {
+      const n = (r.name || "").toLowerCase();
+      const a = (r.author || "").toLowerCase();
+      const m1 = qTitle ? n.includes(qTitle) : true;
+      const m2 = qAuthor ? a.includes(qAuthor) : true;
+      return m1 && m2;
+    });
+
+    loadRows(filtered);
+  }, 250);
+
+  titleEl.addEventListener("input", liveFilter);
+  authorEl.addEventListener("input", liveFilter);
+
+  // ---------------- CLEAR FILTERS (NEW) ----------------
+  if (clearBtn) {
+    clearBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      // clear inputs
+      titleEl.value = "";
+      authorEl.value = "";
+      errDiv.textContent = "";
+      // restore default available master list
+      loadMasterListAvailable();
+      // focus book name input
+      titleEl.focus();
+    });
+  }
+
+  // ---------------- TAKE SELECTED TO ISSUE ----------------
+  if (takeBtn) {
+    takeBtn.addEventListener("click", () => {
+      errDiv.textContent = "";
+      const selected = document.querySelector('input[name="selBook"]:checked');
+
+      if (!selected) {
+        errDiv.textContent = "Please select an available book to issue.";
+        return;
+      }
+
+      const name = selected.dataset.name || "";
+      const author = selected.dataset.author || "";
+      const serial = selected.dataset.serial || "";
+
+      const membEl = document.getElementById("issueMember");
+      const nameEl = document.getElementById("issueBookName");
+      const authorEl = document.getElementById("issueAuthor");
+      const serialEl = document.getElementById("issueSerial");
+      const issueDateEl = document.getElementById("issueDate");
+      const returnDateEl = document.getElementById("issueReturnDate");
+      const issueErrorEl = document.getElementById("issueError");
+
+      if (issueErrorEl) issueErrorEl.textContent = "";
+      if (membEl && !membEl.value) membEl.value = "M001";
+
+      nameEl.value = name;
+      authorEl.value = author;
+      serialEl.value = serial;
+
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, "0");
+      const dd = String(today.getDate()).padStart(2, "0");
+      issueDateEl.value = `${yyyy}-${mm}-${dd}`;
+      returnDateEl.value = "";
+
+      showTxnPage("issue");
+      returnDateEl.focus();
+    });
+  }
+
+  // ---------------- INITIAL LOAD ----------------
+  loadMasterListAvailable();
 }
 
 // ---------- PRODUCT DETAILS (HOME) ----------
@@ -568,75 +774,350 @@ function initIssue() {
 
 function initReturn() {
   const form = document.getElementById("returnForm");
-  if (!form) return;
+  const memberEl = document.getElementById("rbMemberId");
+  const serialEl = document.getElementById("rbSerial");
+  const bookNameEl = document.getElementById("rbBookName");
+  const authorEl = document.getElementById("rbAuthor");
+  const issueDateEl = document.getElementById("rbIssueDate");
+  const plannedReturnEl = document.getElementById("rbReturnDate");
+  const fineEl = document.getElementById("rbCalculatedFine");
+  const remarksEl = document.getElementById("rbRemarks");
+  const errDiv = document.getElementById("rbError");
+  const findBtn = document.getElementById("rbFindBtn");
+  const clearBtn = document.getElementById("rbClearBtn");
+  const proceedBtn = document.getElementById("rbProceedBtn");
+  const memberIssuesListEl = document.getElementById("rbMemberIssuesList");
 
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    console.log("Return Book: submit handler triggered");
+  if (!form || !memberEl || !serialEl || !errDiv) return;
 
-    const errDiv = document.getElementById("rbError");
-    if (!errDiv) return;
+  // shared global for return → fine
+  currentIssueForReturn = null;
+
+  // ---------------- Helper: clear UI ----------------
+  function clearReturnUI() {
+    bookNameEl.value = "";
+    authorEl.value = "";
+    issueDateEl.value = "";
+    plannedReturnEl.value = "";
+    fineEl.value = "0";
+    remarksEl.value = "";
+    currentIssueForReturn = null;
     errDiv.textContent = "";
+    // Clear highlight from availability table if any
+    document
+      .querySelectorAll("#availResults tbody tr")
+      .forEach((r) => r.classList.remove("avail-selected-row"));
+  }
 
-    const memberId = document.getElementById("rbMemberId")?.value.trim();
-    const serial = document.getElementById("rbSerial")?.value.trim();
-    const newReturnDate = document.getElementById("rbReturnDate")?.value;
-    const remarks = document.getElementById("rbRemarks")?.value.trim();
+  // ---------------- Helper: populate UI ----------------
+  function populateReturnUI(data) {
+    bookNameEl.value = data.book_name || "";
+    authorEl.value = data.author || "";
+    issueDateEl.value = data.issue_date || "";
+    plannedReturnEl.value = data.return_date || "";
+    fineEl.value = (data.fine_amount ?? 0).toString();
+    remarksEl.value = "";
+    currentIssueForReturn = data;
+    errDiv.textContent = "";
+  }
 
-    if (!memberId || !serial) {
-      errDiv.textContent = "Membership Id and Serial No are mandatory.";
+  // ---------------- Fetch helpers ----------------
+  async function fetchActiveIssuesForMember(memberId) {
+    try {
+      const resp = await fetch("/api/reports/active-issues");
+      const data = await resp.json();
+      if (!resp.ok) return [];
+      return (data.results || []).filter(
+        (r) => (r.membership_id || "") === memberId
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  async function fetchBookDetailsBySerial(serial) {
+    try {
+      const resp = await fetch("/api/reports/books");
+      const data = await resp.json();
+      if (!resp.ok) return null;
+      return (
+        (data.results || []).find((b) => (b.serial_no || "") === serial) || null
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  // ---------------- Render list of active issues ----------------
+  function renderMemberIssuesList(issues) {
+    if (!issues || issues.length === 0) {
+      memberIssuesListEl.style.display = "none";
+      memberIssuesListEl.innerHTML = "";
       return;
     }
 
-    const formData = new FormData();
-    formData.append("membership_id", memberId);
-    formData.append("serial_no", serial);
-    if (newReturnDate) formData.append("return_date", newReturnDate);
-    if (remarks) formData.append("remarks", remarks);
+    memberIssuesListEl.innerHTML = "";
+    issues.forEach((it) => {
+      const div = document.createElement("div");
+      div.style.padding = "6px";
+      div.style.borderBottom = "1px solid #eee";
+      div.style.cursor = "pointer";
+      div.textContent = `Serial: ${it.serial_no} | Issue: ${it.issue_date} | Planned: ${it.planned_return}`;
+
+      div.addEventListener("click", async () => {
+        const book = await fetchBookDetailsBySerial(it.serial_no);
+
+        const dataObj = {
+          issue_id: it.issue_id,
+          membership_id: it.membership_id,
+          serial_no: it.serial_no,
+          issue_date: it.issue_date,
+          return_date: it.planned_return,
+          book_name: book ? book.name : "",
+          author: book ? book.author : "",
+          fine_amount: 0,
+        };
+
+        // calculate fine (client-side)
+        try {
+          const plannedDt = new Date(it.planned_return);
+          const today = new Date();
+          const late = Math.floor((today - plannedDt) / 86400000);
+          dataObj.fine_amount = late > 0 ? late * 10 : 0;
+        } catch {}
+
+        populateReturnUI(dataObj);
+        memberIssuesListEl.style.display = "none";
+      });
+
+      memberIssuesListEl.appendChild(div);
+    });
+
+    memberIssuesListEl.style.display = "block";
+  }
+
+  // ---------------- Auto-populate when membership ID is entered ----------------
+  memberEl.addEventListener("blur", async () => {
+    const mid = memberEl.value.trim();
+    if (!mid) {
+      renderMemberIssuesList([]);
+      return;
+    }
+
+    memberIssuesListEl.style.display = "block";
+    memberIssuesListEl.textContent = "Checking active issues...";
+
+    const issues = await fetchActiveIssuesForMember(mid);
+
+    if (issues.length === 0) {
+      memberIssuesListEl.textContent = "No active issues for this member.";
+      setTimeout(() => renderMemberIssuesList([]), 5000);
+      return;
+    }
+
+    if (issues.length === 1) {
+      const it = issues[0];
+      const book = await fetchBookDetailsBySerial(it.serial_no);
+
+      const dataObj = {
+        issue_id: it.issue_id,
+        membership_id: it.membership_id,
+        serial_no: it.serial_no,
+        issue_date: it.issue_date,
+        return_date: it.planned_return,
+        book_name: book ? book.name : "",
+        author: book ? book.author : "",
+        fine_amount: 0,
+      };
+
+      try {
+        const plannedDt = new Date(it.planned_return);
+        const today = new Date();
+        const late = Math.floor((today - plannedDt) / 86400000);
+        dataObj.fine_amount = late > 0 ? late * 10 : 0;
+      } catch {}
+
+      populateReturnUI(dataObj);
+      renderMemberIssuesList([]);
+      return;
+    }
+
+    // more than one active issue → show list
+    renderMemberIssuesList(issues);
+  });
+
+  // ---------------- Find Issue Button ----------------
+  if (findBtn) {
+    findBtn.addEventListener("click", async () => {
+      errDiv.textContent = "";
+      const mid = memberEl.value.trim();
+      const serial = serialEl.value.trim();
+
+      if (!mid || !serial) {
+        errDiv.textContent = "Membership Id & Serial No are required.";
+        return;
+      }
+
+      const fd = new FormData();
+      fd.append("membership_id", mid);
+      fd.append("serial_no", serial);
+
+      try {
+        const resp = await fetch("/api/transactions/return/start", {
+          method: "POST",
+          body: fd,
+        });
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          errDiv.textContent = data.detail || "Issue not found.";
+          return;
+        }
+
+        populateReturnUI(data);
+      } catch {
+        errDiv.textContent = "Server error.";
+      }
+    });
+  }
+
+  // ---------------- Clear Button ----------------
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      memberEl.value = "";
+      serialEl.value = "";
+      clearReturnUI();
+      renderMemberIssuesList([]);
+      memberEl.focus();
+    });
+  }
+
+  // ---------------- Start Return (form submit) ----------------
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errDiv.textContent = "";
+
+    const mid = memberEl.value.trim();
+    const serial = serialEl.value.trim();
+
+    if (!mid || !serial) {
+      errDiv.textContent = "Membership Id and Serial No required.";
+      return;
+    }
+
+    const fd = new FormData();
+    fd.append("membership_id", mid);
+    fd.append("serial_no", serial);
+
+    if (plannedReturnEl.value) fd.append("return_date", plannedReturnEl.value);
+    if (remarksEl.value) fd.append("remarks", remarksEl.value);
 
     try {
       const resp = await fetch("/api/transactions/return/start", {
         method: "POST",
-        body: formData,
+        body: fd,
       });
 
-      console.log("Return Book: response status", resp.status);
-
       const data = await resp.json();
-
       if (!resp.ok) {
         errDiv.textContent = data.detail || "Return start failed.";
         return;
       }
 
-      currentIssue = data;
-
-      document.getElementById("pfBookName").value = data.book_name || "";
-      document.getElementById("pfAuthor").value = data.author || "";
-      document.getElementById("pfSerial").value = data.serial_no || serial;
-      document.getElementById("pfIssueDate").value = data.issue_date || "";
-      document.getElementById("pfPlannedReturn").value =
-        data.return_date || newReturnDate || "";
-      document.getElementById("pfActualReturn").value = "";
-      document.getElementById("pfFine").value = (
-        data.fine_amount ?? 0
-      ).toString();
-      document.getElementById("pfFinePaid").checked = false;
-      document.getElementById("pfRemarks").value = remarks || "";
-      document.getElementById("pfError").textContent = "";
-
-      document.getElementById("rbBookName").value = data.book_name || "";
-      document.getElementById("rbAuthor").value = data.author || "";
-      document.getElementById("rbIssueDate").value = data.issue_date || "";
-      if (!newReturnDate && data.return_date) {
-        document.getElementById("rbReturnDate").value = data.return_date;
-      }
-
+      populateReturnUI(data);
       showTxnPage("fine");
-    } catch (err) {
-      console.error(err);
+    } catch {
       errDiv.textContent = "Server error.";
     }
+  });
+
+  // ---------------- Proceed Button (go to fine or auto-complete) ----------------
+  if (proceedBtn) {
+    proceedBtn.addEventListener("click", async () => {
+      errDiv.textContent = "";
+
+      if (!currentIssueForReturn || !currentIssueForReturn.issue_id) {
+        errDiv.textContent = "No issue selected.";
+        return;
+      }
+
+      const actualReturn =
+        plannedReturnEl.value || new Date().toISOString().slice(0, 10);
+      const fineAmt = Number(fineEl.value || 0);
+      const remarks = remarksEl.value || "";
+
+      // If fine exists → go to Fine screen
+      if (fineAmt > 0) {
+        // Fill fine form
+        document.getElementById("pfBookName").value =
+          currentIssueForReturn.book_name || "";
+        document.getElementById("pfAuthor").value =
+          currentIssueForReturn.author || "";
+        document.getElementById("pfSerial").value =
+          currentIssueForReturn.serial_no || serialEl.value;
+        document.getElementById("pfIssueDate").value =
+          currentIssueForReturn.issue_date || "";
+        document.getElementById("pfPlannedReturn").value =
+          currentIssueForReturn.return_date || actualReturn;
+        document.getElementById("pfActualReturn").value = "";
+        document.getElementById("pfFine").value = fineAmt;
+        document.getElementById("pfFinePaid").checked = false;
+        document.getElementById("pfRemarks").value = remarks;
+        document.getElementById("pfError").textContent = "";
+
+        // set global for fine
+        currentIssue = {
+          issue_id: currentIssueForReturn.issue_id,
+          membership_id: currentIssueForReturn.membership_id,
+          serial_no: currentIssueForReturn.serial_no,
+          book_name: currentIssueForReturn.book_name,
+          author: currentIssueForReturn.author,
+          issue_date: currentIssueForReturn.issue_date,
+          return_date: currentIssueForReturn.return_date,
+          fine_amount: fineAmt,
+        };
+
+        showTxnPage("fine");
+        return;
+      }
+
+      // No fine → auto-complete return
+      try {
+        const fd = new FormData();
+        fd.append("issue_id", currentIssueForReturn.issue_id);
+        fd.append("actual_return_date", actualReturn);
+        fd.append("fine_paid", "false");
+        fd.append("remarks", remarks);
+
+        const resp = await fetch("/api/transactions/fine", {
+          method: "POST",
+          body: fd,
+        });
+
+        const data = await resp.json();
+        if (!resp.ok) {
+          errDiv.textContent = data.detail || "Failed to complete return.";
+          return;
+        }
+
+        errDiv.textContent = "Return completed successfully.";
+        clearReturnUI();
+        showStatus("success");
+      } catch {
+        errDiv.textContent = "Server error.";
+      }
+    });
+  }
+
+  // ---------------- Recalculate fine when planned date changes ----------------
+  plannedReturnEl.addEventListener("change", () => {
+    if (!currentIssueForReturn) return;
+    try {
+      const planned = new Date(plannedReturnEl.value);
+      const today = new Date();
+      const late = Math.floor((today - planned) / 86400000);
+      fineEl.value = late > 0 ? late * 10 : 0;
+    } catch {}
   });
 }
 
@@ -648,6 +1129,7 @@ function initFine() {
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+
     const errDiv = document.getElementById("pfError");
     if (!errDiv) return;
     errDiv.textContent = "";
@@ -658,45 +1140,41 @@ function initFine() {
     }
 
     const actualReturn = document.getElementById("pfActualReturn")?.value;
-    const fineAmount = parseFloat(
-      document.getElementById("pfFine")?.value || "0"
-    );
+    const fineAmount = Number(document.getElementById("pfFine")?.value || 0);
     const finePaid = document.getElementById("pfFinePaid")?.checked;
-    const remarks = document.getElementById("pfRemarks")?.value.trim();
+    const remarks = document.getElementById("pfRemarks")?.value || "";
 
     if (!actualReturn) {
-      errDiv.textContent = "Actual return date is mandatory.";
+      errDiv.textContent = "Actual return date is required.";
       return;
     }
 
     if (fineAmount > 0 && !finePaid) {
-      errDiv.textContent =
-        "Fine is pending. Please select 'Fine Paid' to complete the return.";
+      errDiv.textContent = "Fine pending — please select 'Fine Paid'.";
       return;
     }
 
-    const formData = new FormData();
-    formData.append("issue_id", currentIssue.issue_id);
-    formData.append("actual_return_date", actualReturn);
-    formData.append("fine_paid", finePaid ? "true" : "false");
-    formData.append("remarks", remarks || "");
+    const fd = new FormData();
+    fd.append("issue_id", currentIssue.issue_id);
+    fd.append("actual_return_date", actualReturn);
+    fd.append("fine_paid", finePaid ? "true" : "false");
+    fd.append("remarks", remarks);
 
     try {
       const resp = await fetch("/api/transactions/fine", {
         method: "POST",
-        body: formData,
+        body: fd,
       });
       const data = await resp.json();
 
       if (!resp.ok) {
-        errDiv.textContent = data.detail || "Fine payment failed.";
+        errDiv.textContent = data.detail || "Could not complete return.";
         return;
       }
 
-      errDiv.textContent = "Transaction completed successfully.";
+      errDiv.textContent = "Return completed.";
       currentIssue = null;
-    } catch (err) {
-      console.error(err);
+    } catch {
       errDiv.textContent = "Server error.";
     }
   });

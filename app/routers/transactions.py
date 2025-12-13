@@ -4,7 +4,6 @@ from .auth import require_authenticated
 from ..db import get_connection
 
 router = APIRouter(
-    prefix="/api/transactions",
     tags=["transactions"],
     dependencies=[Depends(require_authenticated)],
 )

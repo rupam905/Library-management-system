@@ -67,31 +67,47 @@
     <!-- Transactions -->
     <section id="transactionSection" class="card hidden layout">
       <div class="side-menu">
-        <button onclick="showTxnPage('availability')">Is book available?</button>
-        <button onclick="showTxnPage('issue')">Issue book?</button>
-        <button onclick="showTxnPage('return')">Return book?</button>
-        <button onclick="showTxnPage('fine')">Pay Fine?</button>
+        <button onclick="showTxnPage('availability')">Book availability</button>
+        <button onclick="showTxnPage('issue')">Issue book</button>
+        <button onclick="showTxnPage('return')">Return book</button>
+        <button onclick="showTxnPage('fine')">Pay Fine</button>
       </div>
       <div class="content-area">
         <!-- Availability -->
         <div id="txn-availability" class="txn-page hidden">
+
           <h2>Book Availability</h2>
+
+          <!-- SEARCH FORM -->
           <form id="availForm">
             <div class="form-row">
               <label>Enter Book Name</label>
               <input type="text" id="availTitle" />
             </div>
+
             <div class="form-row">
               <label>Enter Author</label>
               <input type="text" id="availAuthor" />
             </div>
+
             <div class="actions">
               <button type="button" class="btn" onclick="goHome()">Back</button>
               <button type="submit" class="btn primary">Search</button>
+
+              <!-- NEW: Clear Filters -->
+              <button type="button" class="btn" id="availClearBtn">Clear Filters</button>
             </div>
+
             <div id="availError" class="error"></div>
           </form>
-          <h3>Search Results</h3>
+
+          <!-- NEW: Count Display -->
+          <div id="availCount" class="hint" style="margin-top: 10px;">
+            Loading books...
+          </div>
+
+          <!-- BOOK TABLE -->
+          <h3>Book List</h3>
           <table id="availResults">
             <thead>
               <tr>
@@ -102,8 +118,17 @@
                 <th>Available</th>
               </tr>
             </thead>
-            <tbody></tbody>
+            <tbody>
+              <!-- Populated dynamically -->
+            </tbody>
           </table>
+
+          <!-- ACTION BELOW TABLE -->
+          <div class="actions" style="margin-top: 12px;">
+            <button type="button" class="btn primary" id="availTakeToIssueBtn">
+              Take Selected to Issue
+            </button>
+          </div>
         </div>
 
         <!-- Issue -->
@@ -148,115 +173,139 @@
 
 
         <!-- RETURN BOOK -->
+
         <div id="txn-return" class="txn-page hidden">
           <h2>Return Book</h2>
+        
           <form id="returnForm">
+            <!-- MEMBERSHIP ID -->
             <div class="form-row">
               <label>Membership Id <span class="required">*</span></label>
-              <input type="text" id="rbMemberId" required>
+              <input type="text" id="rbMemberId" required placeholder="e.g. M001">
             </div>
-
+        
+            <!-- ACTIVE ISSUES LIST FOR MEMBER -->
+            <div id="rbMemberIssuesList" class="report-box hint" style="margin-top:8px; display:none;"></div>
+        
+            <!-- SERIAL NO -->
             <div class="form-row">
               <label>Serial No <span class="required">*</span></label>
-              <input type="text" id="rbSerial" required>
+              <input type="text" id="rbSerial" required placeholder="Enter serial no or partial">
             </div>
-
-            <!-- These are populated automatically from backend and not editable -->
+        
+            <!-- ACTION BUTTONS -->
+            <div class="actions" style="margin-bottom:8px;">
+              <button type="button" class="btn" id="rbFindBtn">Find Issue</button>
+              <button type="button" class="btn" id="rbClearBtn">Clear</button>
+              <button type="submit" class="btn primary">Start Return</button>
+            </div>
+        
+            <div id="rbError" class="error"></div>
+        
+            <!-- AUTO-POPULATED FIELDS -->
             <div class="form-row">
               <label>Name of Book</label>
               <input type="text" id="rbBookName" readonly>
             </div>
-
+        
             <div class="form-row">
               <label>Author Name</label>
               <input type="text" id="rbAuthor" readonly>
             </div>
-
+        
             <div class="form-row">
               <label>Issue Date</label>
               <input type="text" id="rbIssueDate" readonly>
             </div>
-
+        
+            <!-- USER CAN CHANGE PLANNED RETURN DATE -->
             <div class="form-row">
-              <label>Return Date</label>
-              <!-- populated from issue record; user allowed to change earlier or later -->
+              <label>Planned Return Date</label>
               <input type="date" id="rbReturnDate">
             </div>
-
+        
+            <!-- AUTO-CALCULATED FINE -->
+            <div class="form-row">
+              <label>Calculated Fine (if overdue)</label>
+              <input type="text" id="rbCalculatedFine" readonly value="0">
+            </div>
+        
             <div class="form-row">
               <label>Remarks</label>
               <textarea id="rbRemarks"></textarea>
             </div>
-
+        
+            <!-- PROCEED BUTTON -->
             <div class="actions">
               <button type="button" class="btn" onclick="goBackFromTransactions()">Back</button>
-              <button type="submit" class="btn primary">Confirm</button>
+              <button type="button" class="btn primary" id="rbProceedBtn">Proceed to Pay/Complete</button>
             </div>
-
-            <div id="rbError" class="error"></div>
           </form>
         </div>
 
 
         <!-- PAY FINE -->
         <div id="txn-fine" class="txn-page hidden">
-          <h2>Pay Fine</h2>
+          <h2>Pay Fine / Complete Return</h2>
+        
           <form id="fineForm">
+        
             <div class="form-row">
-              <label>Enter Book Name</label>
+              <label>Book Name</label>
               <input type="text" id="pfBookName" readonly>
             </div>
-
+        
             <div class="form-row">
-              <label>Enter Author</label>
+              <label>Author</label>
               <input type="text" id="pfAuthor" readonly>
             </div>
-
+        
             <div class="form-row">
               <label>Serial No</label>
               <input type="text" id="pfSerial" readonly>
             </div>
-
+        
             <div class="form-row">
               <label>Issue Date</label>
               <input type="text" id="pfIssueDate" readonly>
             </div>
-
+        
             <div class="form-row">
-              <label>Return Date</label>
+              <label>Planned Return Date</label>
               <input type="text" id="pfPlannedReturn" readonly>
             </div>
-
+        
             <div class="form-row">
-              <label>Actual Return Date</label>
+              <label>Actual Return Date <span class="required">*</span></label>
               <input type="date" id="pfActualReturn">
             </div>
-
+        
             <div class="form-row">
-              <label>Fine Calculated</label>
-              <input type="text" id="pfFine" readonly>
+              <label>Fine Amount (Rs)</label>
+              <input type="number" id="pfFine" readonly>
             </div>
-
+        
             <div class="form-row">
-              <label>
-                <input type="checkbox" id="pfFinePaid">
-                Fine Paid
-              </label>
+              <label>Fine Paid?</label>
+              <input type="checkbox" id="pfFinePaid">
             </div>
-
+        
+            <!-- NEW FIELD: Remarks -->
             <div class="form-row">
               <label>Remarks</label>
               <textarea id="pfRemarks"></textarea>
             </div>
-
-            <div class="actions">
-              <button type="button" class="btn" onclick="goBackFromTransactions()">Back</button>
-              <button type="submit" class="btn primary">Confirm</button>
-            </div>
-
+        
             <div id="pfError" class="error"></div>
+        
+            <div class="actions">
+              <button type="button" class="btn" onclick="showTxnPage('return')">Back</button>
+              <button type="submit" class="btn primary">Complete Return</button>
+            </div>
+        
           </form>
         </div>
+
 
     </section>
 
