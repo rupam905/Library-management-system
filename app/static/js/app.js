@@ -773,13 +773,13 @@ function initIssue() {
 // ---------- RETURN BOOK FLOW ----------
 
 function initReturn() {
-  const form = document.getElementById("returnForm");
   const memberEl = document.getElementById("rbMemberId");
   const serialEl = document.getElementById("rbSerial");
   const bookNameEl = document.getElementById("rbBookName");
   const authorEl = document.getElementById("rbAuthor");
   const issueDateEl = document.getElementById("rbIssueDate");
-  const plannedReturnEl = document.getElementById("rbReturnDate");
+  const plannedReturnEl = document.getElementById("rbReturnDate"); // planned (read-only)
+  const actualReturnEl = document.getElementById("rbActualReturnDate"); // actual (calendar)
   const fineEl = document.getElementById("rbCalculatedFine");
   const remarksEl = document.getElementById("rbRemarks");
   const errDiv = document.getElementById("rbError");
@@ -788,9 +788,9 @@ function initReturn() {
   const proceedBtn = document.getElementById("rbProceedBtn");
   const memberIssuesListEl = document.getElementById("rbMemberIssuesList");
 
-  if (!form || !memberEl || !serialEl || !errDiv) return;
+  if (!memberEl || !plannedReturnEl || !actualReturnEl || !proceedBtn) return;
 
-  // shared global for return → fine
+  // shared global
   currentIssueForReturn = null;
 
   // ---------------- Helper: clear UI ----------------
@@ -799,60 +799,55 @@ function initReturn() {
     authorEl.value = "";
     issueDateEl.value = "";
     plannedReturnEl.value = "";
+    actualReturnEl.value = "";
     fineEl.value = "0";
     remarksEl.value = "";
-    currentIssueForReturn = null;
     errDiv.textContent = "";
-    // Clear highlight from availability table if any
-    document
-      .querySelectorAll("#availResults tbody tr")
-      .forEach((r) => r.classList.remove("avail-selected-row"));
+    currentIssueForReturn = null;
+    memberIssuesListEl.style.display = "none";
   }
 
-  // ---------------- Helper: populate UI ----------------
+  // ---------------- Helper: populate issue details ----------------
   function populateReturnUI(data) {
     bookNameEl.value = data.book_name || "";
     authorEl.value = data.author || "";
     issueDateEl.value = data.issue_date || "";
     plannedReturnEl.value = data.return_date || "";
-    fineEl.value = (data.fine_amount ?? 0).toString();
+    plannedReturnEl.readOnly = true; // IMPORTANT
+    actualReturnEl.value = ""; // user must choose
+    fineEl.value = "0";
     remarksEl.value = "";
-    currentIssueForReturn = data;
     errDiv.textContent = "";
+    currentIssueForReturn = data;
   }
 
-  // ---------------- Fetch helpers ----------------
-  async function fetchActiveIssuesForMember(memberId) {
+  // ---------------- Fetch active issues for member ----------------
+  async function fetchActiveIssues(memberId) {
     try {
       const resp = await fetch("/api/reports/active-issues");
       const data = await resp.json();
       if (!resp.ok) return [];
-      return (data.results || []).filter(
-        (r) => (r.membership_id || "") === memberId
-      );
+      return (data.results || []).filter((r) => r.membership_id === memberId);
     } catch {
       return [];
     }
   }
 
-  async function fetchBookDetailsBySerial(serial) {
+  async function fetchBookBySerial(serial) {
     try {
       const resp = await fetch("/api/reports/books");
       const data = await resp.json();
       if (!resp.ok) return null;
-      return (
-        (data.results || []).find((b) => (b.serial_no || "") === serial) || null
-      );
+      return (data.results || []).find((b) => b.serial_no === serial) || null;
     } catch {
       return null;
     }
   }
 
-  // ---------------- Render list of active issues ----------------
-  function renderMemberIssuesList(issues) {
-    if (!issues || issues.length === 0) {
+  // ---------------- Render selectable issues ----------------
+  function renderIssuesList(issues) {
+    if (!issues.length) {
       memberIssuesListEl.style.display = "none";
-      memberIssuesListEl.innerHTML = "";
       return;
     }
 
@@ -865,9 +860,8 @@ function initReturn() {
       div.textContent = `Serial: ${it.serial_no} | Issue: ${it.issue_date} | Planned: ${it.planned_return}`;
 
       div.addEventListener("click", async () => {
-        const book = await fetchBookDetailsBySerial(it.serial_no);
-
-        const dataObj = {
+        const book = await fetchBookBySerial(it.serial_no);
+        populateReturnUI({
           issue_id: it.issue_id,
           membership_id: it.membership_id,
           serial_no: it.serial_no,
@@ -875,18 +869,7 @@ function initReturn() {
           return_date: it.planned_return,
           book_name: book ? book.name : "",
           author: book ? book.author : "",
-          fine_amount: 0,
-        };
-
-        // calculate fine (client-side)
-        try {
-          const plannedDt = new Date(it.planned_return);
-          const today = new Date();
-          const late = Math.floor((today - plannedDt) / 86400000);
-          dataObj.fine_amount = late > 0 ? late * 10 : 0;
-        } catch {}
-
-        populateReturnUI(dataObj);
+        });
         memberIssuesListEl.style.display = "none";
       });
 
@@ -896,30 +879,26 @@ function initReturn() {
     memberIssuesListEl.style.display = "block";
   }
 
-  // ---------------- Auto-populate when membership ID is entered ----------------
+  // ---------------- Auto lookup on membership blur ----------------
   memberEl.addEventListener("blur", async () => {
     const mid = memberEl.value.trim();
-    if (!mid) {
-      renderMemberIssuesList([]);
-      return;
-    }
+    if (!mid) return;
 
     memberIssuesListEl.style.display = "block";
-    memberIssuesListEl.textContent = "Checking active issues...";
+    memberIssuesListEl.textContent = "Loading active issues...";
 
-    const issues = await fetchActiveIssuesForMember(mid);
+    const issues = await fetchActiveIssues(mid);
 
-    if (issues.length === 0) {
-      memberIssuesListEl.textContent = "No active issues for this member.";
-      setTimeout(() => renderMemberIssuesList([]), 5000);
+    if (!issues.length) {
+      memberIssuesListEl.textContent = "No active issues found.";
+      setTimeout(() => (memberIssuesListEl.style.display = "none"), 2000);
       return;
     }
 
     if (issues.length === 1) {
       const it = issues[0];
-      const book = await fetchBookDetailsBySerial(it.serial_no);
-
-      const dataObj = {
+      const book = await fetchBookBySerial(it.serial_no);
+      populateReturnUI({
         issue_id: it.issue_id,
         membership_id: it.membership_id,
         serial_no: it.serial_no,
@@ -927,199 +906,105 @@ function initReturn() {
         return_date: it.planned_return,
         book_name: book ? book.name : "",
         author: book ? book.author : "",
-        fine_amount: 0,
-      };
-
-      try {
-        const plannedDt = new Date(it.planned_return);
-        const today = new Date();
-        const late = Math.floor((today - plannedDt) / 86400000);
-        dataObj.fine_amount = late > 0 ? late * 10 : 0;
-      } catch {}
-
-      populateReturnUI(dataObj);
-      renderMemberIssuesList([]);
+      });
+      memberIssuesListEl.style.display = "none";
       return;
     }
 
-    // more than one active issue → show list
-    renderMemberIssuesList(issues);
+    renderIssuesList(issues);
   });
 
-  // ---------------- Find Issue Button ----------------
-  if (findBtn) {
-    findBtn.addEventListener("click", async () => {
-      errDiv.textContent = "";
-      const mid = memberEl.value.trim();
-      const serial = serialEl.value.trim();
+  // ---------------- Fine calculation (ACTUAL return date) ----------------
+  actualReturnEl.addEventListener("change", () => {
+    if (!currentIssueForReturn || !plannedReturnEl.value) return;
 
-      if (!mid || !serial) {
-        errDiv.textContent = "Membership Id & Serial No are required.";
-        return;
-      }
+    const planned = new Date(currentIssueForReturn.return_date);
+    const actual = new Date(actualReturnEl.value);
 
-      const fd = new FormData();
-      fd.append("membership_id", mid);
-      fd.append("serial_no", serial);
+    if (isNaN(actual.getTime())) return;
 
-      try {
-        const resp = await fetch("/api/transactions/return/start", {
-          method: "POST",
-          body: fd,
-        });
-        const data = await resp.json();
+    const lateDays = Math.floor((actual - planned) / 86400000);
+    fineEl.value = lateDays > 0 ? lateDays * 10 : 0;
+  });
 
-        if (!resp.ok) {
-          errDiv.textContent = data.detail || "Issue not found.";
-          return;
-        }
-
-        populateReturnUI(data);
-      } catch {
-        errDiv.textContent = "Server error.";
-      }
-    });
-  }
-
-  // ---------------- Clear Button ----------------
-  if (clearBtn) {
-    clearBtn.addEventListener("click", () => {
-      memberEl.value = "";
-      serialEl.value = "";
-      clearReturnUI();
-      renderMemberIssuesList([]);
-      memberEl.focus();
-    });
-  }
-
-  // ---------------- Start Return (form submit) ----------------
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
+  // ---------------- Proceed button (DECIDES FLOW) ----------------
+  proceedBtn.addEventListener("click", async () => {
     errDiv.textContent = "";
 
-    const mid = memberEl.value.trim();
-    const serial = serialEl.value.trim();
-
-    if (!mid || !serial) {
-      errDiv.textContent = "Membership Id and Serial No required.";
+    if (!currentIssueForReturn) {
+      errDiv.textContent = "No issue selected.";
       return;
     }
 
-    const fd = new FormData();
-    fd.append("membership_id", mid);
-    fd.append("serial_no", serial);
+    if (!actualReturnEl.value) {
+      errDiv.textContent = "Please select Actual Return Date.";
+      return;
+    }
 
-    if (plannedReturnEl.value) fd.append("return_date", plannedReturnEl.value);
-    if (remarksEl.value) fd.append("remarks", remarksEl.value);
+    const planned = new Date(currentIssueForReturn.return_date);
+    const actual = new Date(actualReturnEl.value);
+    const lateDays = Math.floor((actual - planned) / 86400000);
+    const fineAmt = lateDays > 0 ? lateDays * 10 : 0;
 
+    fineEl.value = fineAmt;
+
+    // -------- CASE A: Fine exists --------
+    if (fineAmt > 0) {
+      document.getElementById("pfBookName").value = bookNameEl.value;
+      document.getElementById("pfAuthor").value = authorEl.value;
+      document.getElementById("pfSerial").value =
+        currentIssueForReturn.serial_no;
+      document.getElementById("pfIssueDate").value = issueDateEl.value;
+      document.getElementById("pfPlannedReturn").value = plannedReturnEl.value;
+      document.getElementById("pfActualReturn").value = actualReturnEl.value;
+      document.getElementById("pfFine").value = fineAmt;
+      document.getElementById("pfFinePaid").checked = false;
+      document.getElementById("pfRemarks").value = remarksEl.value || "";
+      document.getElementById("pfError").textContent = "";
+
+      currentIssue = {
+        issue_id: currentIssueForReturn.issue_id,
+        fine_amount: fineAmt,
+      };
+
+      showTxnPage("fine");
+      return;
+    }
+
+    // -------- CASE B: No fine --------
     try {
-      const resp = await fetch("/api/transactions/return/start", {
+      const fd = new FormData();
+      fd.append("issue_id", currentIssueForReturn.issue_id);
+      fd.append("actual_return_date", actualReturnEl.value);
+      fd.append("fine_paid", "false");
+
+      const resp = await fetch("/api/transactions/fine", {
         method: "POST",
         body: fd,
       });
-
       const data = await resp.json();
+
       if (!resp.ok) {
-        errDiv.textContent = data.detail || "Return start failed.";
+        errDiv.textContent = data.detail || "Return failed.";
         return;
       }
 
-      populateReturnUI(data);
-      showTxnPage("fine");
+      showStatus("success");
+      clearReturnUI();
     } catch {
       errDiv.textContent = "Server error.";
     }
   });
 
-  // ---------------- Proceed Button (go to fine or auto-complete) ----------------
-  if (proceedBtn) {
-    proceedBtn.addEventListener("click", async () => {
-      errDiv.textContent = "";
-
-      if (!currentIssueForReturn || !currentIssueForReturn.issue_id) {
-        errDiv.textContent = "No issue selected.";
-        return;
-      }
-
-      const actualReturn =
-        plannedReturnEl.value || new Date().toISOString().slice(0, 10);
-      const fineAmt = Number(fineEl.value || 0);
-      const remarks = remarksEl.value || "";
-
-      // If fine exists → go to Fine screen
-      if (fineAmt > 0) {
-        // Fill fine form
-        document.getElementById("pfBookName").value =
-          currentIssueForReturn.book_name || "";
-        document.getElementById("pfAuthor").value =
-          currentIssueForReturn.author || "";
-        document.getElementById("pfSerial").value =
-          currentIssueForReturn.serial_no || serialEl.value;
-        document.getElementById("pfIssueDate").value =
-          currentIssueForReturn.issue_date || "";
-        document.getElementById("pfPlannedReturn").value =
-          currentIssueForReturn.return_date || actualReturn;
-        document.getElementById("pfActualReturn").value = "";
-        document.getElementById("pfFine").value = fineAmt;
-        document.getElementById("pfFinePaid").checked = false;
-        document.getElementById("pfRemarks").value = remarks;
-        document.getElementById("pfError").textContent = "";
-
-        // set global for fine
-        currentIssue = {
-          issue_id: currentIssueForReturn.issue_id,
-          membership_id: currentIssueForReturn.membership_id,
-          serial_no: currentIssueForReturn.serial_no,
-          book_name: currentIssueForReturn.book_name,
-          author: currentIssueForReturn.author,
-          issue_date: currentIssueForReturn.issue_date,
-          return_date: currentIssueForReturn.return_date,
-          fine_amount: fineAmt,
-        };
-
-        showTxnPage("fine");
-        return;
-      }
-
-      // No fine → auto-complete return
-      try {
-        const fd = new FormData();
-        fd.append("issue_id", currentIssueForReturn.issue_id);
-        fd.append("actual_return_date", actualReturn);
-        fd.append("fine_paid", "false");
-        fd.append("remarks", remarks);
-
-        const resp = await fetch("/api/transactions/fine", {
-          method: "POST",
-          body: fd,
-        });
-
-        const data = await resp.json();
-        if (!resp.ok) {
-          errDiv.textContent = data.detail || "Failed to complete return.";
-          return;
-        }
-
-        errDiv.textContent = "Return completed successfully.";
-        clearReturnUI();
-        showStatus("success");
-      } catch {
-        errDiv.textContent = "Server error.";
-      }
-    });
-  }
-
-  // ---------------- Recalculate fine when planned date changes ----------------
-  plannedReturnEl.addEventListener("change", () => {
-    if (!currentIssueForReturn) return;
-    try {
-      const planned = new Date(plannedReturnEl.value);
-      const today = new Date();
-      const late = Math.floor((today - planned) / 86400000);
-      fineEl.value = late > 0 ? late * 10 : 0;
-    } catch {}
+  // ---------------- Clear button ----------------
+  clearBtn?.addEventListener("click", () => {
+    memberEl.value = "";
+    serialEl.value = "";
+    clearReturnUI();
+    memberEl.focus();
   });
 }
+
 
 // ---------- PAY FINE FLOW ----------
 
